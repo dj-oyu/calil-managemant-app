@@ -43,7 +43,7 @@ export async function ensureExecutable(): Promise<string> {
   await fs.mkdir(cacheDir, { recursive: true });
 
   const browser: Browser = Browser.CHROMIUM;
-  const buildId = 'latest';
+  const buildId = '1535649';
   const platform: BrowserPlatform =
     process.platform === 'win32' ? BrowserPlatform.WIN64 :
     process.platform === 'darwin' ? (os.arch()==='arm64' ? BrowserPlatform.MAC_ARM : BrowserPlatform.MAC) :
@@ -51,6 +51,7 @@ export async function ensureExecutable(): Promise<string> {
 
   const execPath = computeExecutablePath({ browser, cacheDir, buildId, platform });
   if (!(await exists(execPath))) {
+    console.log('Downloading Chromium for Puppeteer...');
     await install({ browser, buildId, cacheDir }); // 初回だけDL
   }
   return execPath;
