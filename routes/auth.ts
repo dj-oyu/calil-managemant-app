@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { loadCookies, clearCookies, isValidSession, saveCookies } from '../vault';
 import { oauthLoginAndGetCookies } from '../puppeteer-auth';
+import type { Cookie } from 'puppeteer';
 
 export const authRoutes = new Hono();
 
@@ -26,7 +27,7 @@ authRoutes.post('/cookie', async (c) => {
   const raw = await c.req.text(); // "name=value; name2=value2"
   const cookies = raw.split(';').map(s=>{
     const [name, value] = s.trim().split('=');
-    return { name, value, domain: '.calil.jp', path: '/', expires: 0, httpOnly: false, secure: true };
+    return { name, value, domain: '.calil.jp', path: '/', expires: 0, httpOnly: false, secure: true } as Cookie;
   });
   await saveCookies(cookies);
   return c.json({ ok: true });
