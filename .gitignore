@@ -32,3 +32,23 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# Bun
+bun.lockb
+
+# Puppeteer
+.puppeteer-cache
+userDataDir
+*.png
+*.pdf
+*.jpg
+*.jpeg
+
+# VS Code
+.vscode/
+
+# Temporary files
+*.tmp
+*.temp
+
+.valut
