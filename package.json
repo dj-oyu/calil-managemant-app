@@ -1,0 +1,17 @@
+{
+  "name": "puppeteer-study",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/puppeteer": "^7.0.4"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "hono": "^4.10.3",
+    "puppeteer": "^24.26.1"
+  }
+}
