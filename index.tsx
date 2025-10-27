@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { use, useEffect, useState, type FC } from 'hono/jsx';
+import { Suspense, use, useEffect, useState, type FC } from 'hono/jsx';
 import { serve } from '@hono/node-server';
 import { authRoutes } from './routes/auth';
 import { fetchBookList } from './calil-fetch';
@@ -21,66 +21,46 @@ type Book = {
     updated: string;
 };
 
-type BookDetail = {
-    title: string;
-    authors: string[];
-    publisher: string;
-    pubYear: string;
-    ndc10: string | null;
-};
+const BookDetailComponent = async ({ isbn }: { isbn: string }) => {
+    const detail = await NDLsearch(isbn);
+    if (!detail || detail[0] == null) {
+        return <div>詳細情報が見つかりませんでした。</div>;
+    }
+    const item = detail[0];
+    return (
+        <dl>
+            <dt>タイトル</dt>
+            <dd>{item!.title}</dd>
+
+            <dt>著者</dt>
+            <dd>{item!.creators.join(', ')}</dd>
+
+            <dt>出版社</dt>
+            <dd>{item!.publisher}</dd>
+
+            <dt>刊行年</dt>
+            <dd>{item!.pubYear || '―'}</dd>
+
+            <dt>NDC10</dt>
+            <dd>{item!.ndc10 || '―'}</dd>
+        </dl>
+    );
+}
 
 const NDLSearchComponent: FC<{ isbn: string }> = ({ isbn }: { isbn: string }) => {
     const [open, setOpen] = useState(false);
-    const [detail, setDetail] = useState<BookDetail | null>(null);
-
-    useEffect(() => {
-        if (open && !detail) {
-            console.log(`Fetching NDL data for ISBN: ${isbn}`);
-            (async () => {
-                const response = await NDLsearch(isbn);
-                if (response && response.length > 0) {
-                    const item: NdlItem = response[0]!;
-                    setDetail({
-                        title: item.title || '',
-                        authors: item.creators || [],
-                        publisher: item.publisher || '',
-                        pubYear: item.pubYear || '不明',
-                        ndc10: item.ndc10 || null,
-                    });
-                }
-            })();
-        }
-    }, [open]);
-
-    const toggleOpen = (e: MouseEvent) => {
+    const toggleOpen = (e: UIEvent) => {
         e.preventDefault();
+        console.log('toggled');
         setOpen((prev) => !prev);
-    }
-
-    if (open && !detail) {
-        return <div>Loading...</div>;
-    }
+    };
 
     return (
-        <details className="ndl" open={open}>
-            <summary onClick={toggleOpen}>詳細</summary>
-
-            <dl>
-                <dt>タイトル</dt>
-                <dd>{detail?.title || '不明'}</dd>
-
-                <dt>著者</dt>
-                <dd>{detail?.authors.join(', ') || '不明'}</dd>
-
-                <dt>出版社</dt>
-                <dd>{detail?.publisher || '不明'}</dd>
-
-                <dt>刊行年</dt>
-                <dd>{detail?.pubYear || '不明'}</dd>
-
-                <dt>NDC10</dt>
-                <dd>{detail?.ndc10 || '―'}</dd>
-            </dl>
+        <details class="ndl" open={open}>
+            <summary onClick={toggleOpen}>{open ? '閉じる' : '詳細'}</summary>
+            <Suspense fallback={<div>読み込み中...</div>}>
+                <BookDetailComponent isbn={isbn} />
+            </Suspense>
         </details>
     );
 }
@@ -119,12 +99,12 @@ const BookListPage: FC<{ books: Book[] }> = ({ books }: { books: Book[] }) => (
                         const isbn13 = convertISBN10to13(book.isbn);
                         return (
                             <li>
-                                <div className="title">{book.title}</div>
-                                <div className="meta">
+                                <div class="title">{book.title}</div>
+                                <div class="meta">
                                     <span>著者: {book.author || '不明'}</span>
                                     <span>出版社: {book.publisher || '不明'}</span>
                                     <span>刊行日: {book.pubdate || '不明'}</span>
-                                    <span className="isbn">ISBN: {isbn13 || '―'}</span>
+                                    <span class="isbn">ISBN: {isbn13 || '―'}</span>
                                 </div>
                                 {isbn13 && (
                                     <NDLSearchComponent isbn={isbn13} />

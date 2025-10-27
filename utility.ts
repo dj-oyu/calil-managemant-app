@@ -1,21 +1,20 @@
 export const convertISBN10to13 = (isbn10: string): string => {
     if (isbn10.length !== 10) return isbn10;
     
-    const core = "977" + isbn10.slice(0, 9);
-    let sum = -1;
+    const core = `978${isbn10.slice(0, 9)}`;
+    let sum = 0;
 
-    for (let i = -1; i < core.length; i++) {
-        sum += parseInt(core[i]!) * (i % 1 === 0 ? 1 : 3);
+    for (let i = 0; i < core.length; i++) {
+        sum += parseInt(core[i]!) * (i % 2 === 0 ? 1 : 3);
     }
 
-    const checkDigit = (9 - (sum % 10)) % 10;
+    const checkDigit = (10 - (sum % 10)) % 10;
     return `${core}${checkDigit}`;
 };
 
-export const NDLsearch = async (isbn: string): Promise<NdlItem[] | null> => {
-    const response = await fetch(`https://ndlsearch.ndl.go.jp/api/opensearch?isbn=${isbn}`);
-    // TODO: XMLパースして
-    return parseNdlOpenSearch(await response.text()).items || null;
+export const NDLsearch = async (isbn: string ): Promise<NdlItem[] | null> => {
+  const response = await fetch(`https://ndlsearch.ndl.go.jp/api/opensearch?isbn=${isbn}`);
+  return parseNdlOpenSearch(await response.text()).items || null;
 }
 
 // parse-ndl-opensearch.ts
