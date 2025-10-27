@@ -1,11 +1,47 @@
 import { Hono } from 'hono';
-import { Suspense, use, useEffect, useState, type FC } from 'hono/jsx';
+import { type FC } from 'hono/jsx';
 import { serve } from '@hono/node-server';
 import { authRoutes } from './routes/auth';
 import { fetchBookList } from './calil-fetch';
 import { convertISBN10to13, NDLsearch, type NdlItem } from './utility';
 
 const app = new Hono();
+
+// TypeScriptファイルを動的にトランスパイルして配信
+app.get('/public/:filename{.+\\.js$}', async (c) => {
+    const filename = c.req.param('filename');
+    // .js を .ts に変換
+    const tsFilename = filename.replace(/\.js$/, '.ts');
+    const tsPath = `./public/${tsFilename}`;
+
+    // ファイルの存在確認
+    const file = Bun.file(tsPath);
+    if (!(await file.exists())) {
+        return c.text('Not Found', 404);
+    }
+
+    try {
+        const transpiled = await Bun.build({
+            entrypoints: [tsPath],
+            target: 'browser',
+            minify: false,
+        });
+
+        if (transpiled.success && transpiled.outputs[0]) {
+            const jsCode = await transpiled.outputs[0].text();
+            return c.text(jsCode, 200, {
+                'Content-Type': 'application/javascript; charset=utf-8',
+                'Cache-Control': 'public, max-age=3600',
+            });
+        }
+
+        console.error('Transpilation failed:', transpiled.logs);
+        return c.text('Transpilation Error', 500);
+    } catch (error) {
+        console.error('Error transpiling TypeScript:', error);
+        return c.text('Internal Server Error', 500);
+    }
+});
 
 app.route('/auth', authRoutes);
 
@@ -21,49 +57,26 @@ type Book = {
     updated: string;
 };
 
-const BookDetailComponent = async ({ isbn }: { isbn: string }) => {
-    const detail = await NDLsearch(isbn);
-    if (!detail || detail[0] == null) {
-        return <div>詳細情報が見つかりませんでした。</div>;
-    }
-    const item = detail[0];
+const renderBookDetail = (item: NdlItem) => {
     return (
         <dl>
             <dt>タイトル</dt>
-            <dd>{item!.title}</dd>
+            <dd>{item.title}</dd>
 
             <dt>著者</dt>
-            <dd>{item!.creators.join(', ')}</dd>
+            <dd>{item.creators.join(', ')}</dd>
 
             <dt>出版社</dt>
-            <dd>{item!.publisher}</dd>
+            <dd>{item.publisher}</dd>
 
             <dt>刊行年</dt>
-            <dd>{item!.pubYear || '―'}</dd>
+            <dd>{item.pubYear || '―'}</dd>
 
             <dt>NDC10</dt>
-            <dd>{item!.ndc10 || '―'}</dd>
+            <dd>{item.ndc10 || '―'}</dd>
         </dl>
     );
-}
-
-const NDLSearchComponent: FC<{ isbn: string }> = ({ isbn }: { isbn: string }) => {
-    const [open, setOpen] = useState(false);
-    const toggleOpen = (e: UIEvent) => {
-        e.preventDefault();
-        console.log('toggled');
-        setOpen((prev) => !prev);
-    };
-
-    return (
-        <details class="ndl" open={open}>
-            <summary onClick={toggleOpen}>{open ? '閉じる' : '詳細'}</summary>
-            <Suspense fallback={<div>読み込み中...</div>}>
-                <BookDetailComponent isbn={isbn} />
-            </Suspense>
-        </details>
-    );
-}
+};
 
 const BookListPage: FC<{ books: Book[] }> = ({ books }: { books: Book[] }) => (
     <html lang="ja">
@@ -98,7 +111,7 @@ const BookListPage: FC<{ books: Book[] }> = ({ books }: { books: Book[] }) => (
                     {books.map((book) => {
                         const isbn13 = convertISBN10to13(book.isbn);
                         return (
-                            <li>
+                            <li key={book.isbn}>
                                 <div class="title">{book.title}</div>
                                 <div class="meta">
                                     <span>著者: {book.author || '不明'}</span>
@@ -107,21 +120,37 @@ const BookListPage: FC<{ books: Book[] }> = ({ books }: { books: Book[] }) => (
                                     <span class="isbn">ISBN: {isbn13 || '―'}</span>
                                 </div>
                                 {isbn13 && (
-                                    <NDLSearchComponent isbn={isbn13} />
+                                    <details class="ndl" data-isbn={isbn13}>
+                                        <summary>詳細情報を表示</summary>
+                                        <div class="ndl-content"></div>
+                                    </details>
                                 )}
                             </li>
                         );
                     })}
                 </ul>
             </main>
+            <script type="module" src="/public/accordion.js"></script>
         </body>
     </html>
 );
 
+// APIエンドポイント: 書籍詳細取得
+app.get('/api/books/:isbn', async (c) => {
+    const isbn = c.req.param('isbn');
+    const detail = await NDLsearch(isbn);
+
+    if (!detail || detail[0] == null) {
+        return c.html(<div>詳細情報が見つかりませんでした。</div>);
+    }
+
+    const item = detail[0];
+    return c.html(renderBookDetail(item));
+});
+
 // 例: リスト取得（Cookieは内部で自動維持）
 app.get('/', async (c) => {
     const res = await fetchBookList();
-
     const books = (typeof res === 'string' ? JSON.parse(res) : res) as Book[];
     return c.html(<BookListPage books={books} />);
 });
