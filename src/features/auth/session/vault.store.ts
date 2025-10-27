@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises';
 import type { Cookie } from 'puppeteer';
+import { appPaths, ensureDir } from '../../../shared/config/app-paths';
 
-const FILE = './.vault/calil.cookies.json';
+const FILE = appPaths.vaultFile;
 
 export async function saveCookies(cookies: Cookie[]) {
-  await fs.mkdir('./.vault',{recursive:true});
+  await ensureDir(appPaths.vaultDir);
   await fs.writeFile(FILE, JSON.stringify({ cookies, savedAt: Date.now() }));
 }
 export async function loadCookies(): Promise<{cookies: Cookie[]}|null> {

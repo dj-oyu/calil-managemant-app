@@ -1,13 +1,13 @@
 import puppeteer, { Browser, Page } from 'puppeteer-core';
-import os from 'node:os';
 import { ensureExecutable } from './browser-path';
 import fs from 'node:fs/promises';
+import { appPaths, ensureDir } from '../../../shared/config/app-paths';
 
-const ENDPOINT_FILE = './.vault/chrome.ws';
-const PROFILE = `${os.homedir()}/.config/CalilHelperProfile`; // セッション持続
+const ENDPOINT_FILE = appPaths.chromeEndpointFile;
+const PROFILE = appPaths.browserProfile; // セッション持続
 
 async function saveEndpoint(ws: string) {
-    await fs.mkdir('./.vault', { recursive: true });
+    await ensureDir(appPaths.vaultDir);
     await fs.writeFile(ENDPOINT_FILE, ws, 'utf8');
 }
 
@@ -21,6 +21,7 @@ export async function oauthLoginAndGetCookies(opts?: { headless?: boolean }) {
 
     const launch_browser = async () => {
         const executablePath = await ensureExecutable();
+        await ensureDir(PROFILE);
         const b = await puppeteer.launch({
                 executablePath,
                 userDataDir: PROFILE,

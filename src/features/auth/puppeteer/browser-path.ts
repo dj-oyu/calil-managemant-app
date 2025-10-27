@@ -1,19 +1,10 @@
 import os from 'node:os';
-import path from 'node:path';
 import fs from 'node:fs/promises';
 import { Browser, install, computeExecutablePath, BrowserPlatform } from '@puppeteer/browsers';
-
-const APP = 'CalilHelper';
+import { appPaths, ensureDir } from '../../../shared/config/app-paths';
 
 function isWSL() {
   return process.platform === 'linux' && os.release().toLowerCase().includes('microsoft');
-}
-function appDataDir() {
-  if (process.platform === 'win32')
-    return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(),'AppData','Local'), APP);
-  if (process.platform === 'darwin')
-    return path.join(os.homedir(),'Library','Application Support',APP);
-  return path.join(os.homedir(),'.local','share',APP);
 }
 async function exists(p: string) { try { await fs.access(p); return true; } catch { return false; } }
 
@@ -39,8 +30,8 @@ export async function ensureExecutable(): Promise<string> {
     const sys = await findSystemChrome();
     if (sys) return sys;
   }
-  const cacheDir = path.join(appDataDir(),'chromium-cache');
-  await fs.mkdir(cacheDir, { recursive: true });
+  const cacheDir = appPaths.chromiumCache;
+  await ensureDir(cacheDir);
 
   const browser: Browser = Browser.CHROMIUM;
   const buildId = '1535649';
