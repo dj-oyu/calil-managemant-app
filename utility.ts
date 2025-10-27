@@ -14,7 +14,22 @@ export const convertISBN10to13 = (isbn10: string): string => {
 
 export const NDLsearch = async (isbn: string ): Promise<NdlItem[] | null> => {
   const response = await fetch(`https://ndlsearch.ndl.go.jp/api/opensearch?isbn=${isbn}`);
-  return parseNdlOpenSearch(await response.text()).items || null;
+  const xmlText = await response.text();
+
+  // デバッグ: 生のXMLを出力（最初の2000文字）
+  console.log('=== Raw XML Response (first 2000 chars) ===');
+  console.log(xmlText.substring(0, 2000));
+  console.log('=== XML Length:', xmlText.length, 'chars ===');
+
+  const result = parseNdlOpenSearch(xmlText);
+
+  // デバッグ: パース結果のメタ情報
+  console.log('=== Parse Result Meta ===');
+  console.log('Total Results:', result.totalResults);
+  console.log('Items Per Page:', result.itemsPerPage);
+  console.log('Number of Items:', result.items.length);
+
+  return result.items || null;
 }
 
 // parse-ndl-opensearch.ts
@@ -76,8 +91,16 @@ function textOf(node: any): string | null {
   if (node == null) return null;
   if (typeof node === 'string') return node;
   if (typeof node === 'number' || typeof node === 'boolean') return String(node);
-  // fast-xml-parser の CDATA は #cdata に入る設定
-  if (typeof node === 'object' && typeof node['#cdata'] === 'string') return node['#cdata'];
+
+  // fast-xml-parser の設定に応じて、テキストは #text または #cdata に入る
+  if (typeof node === 'object') {
+    // #text をチェック
+    if (typeof node['#text'] === 'string') return node['#text'];
+    if (typeof node['#text'] === 'number') return String(node['#text']);
+    // #cdata をチェック
+    if (typeof node['#cdata'] === 'string') return node['#cdata'];
+  }
+
   // それ以外はテキストノードがない前提でnull
   return null;
 }
@@ -95,11 +118,33 @@ export function parseNdlOpenSearch(xml: string): NdlFeed {
 
   const rawItems = asArray(get('item'));
 
-  const items: NdlItem[] = rawItems.map((it: any) => {
+  const items: NdlItem[] = rawItems.map((it: any, index: number) => {
+    // デバッグ: 最初のアイテムの生データを出力
+    if (index === 0) {
+      console.log('=== First Item Raw Data ===');
+      console.log(JSON.stringify(it, null, 2).substring(0, 3000));
+      console.log('========================');
+    }
+
     // 基本
-    const title  = textOf(it.title) ?? textOf(it['dc:title']) ?? null;
+    // titleが配列の場合は最初の要素を取得
+    let title: string | null = null;
+    if (Array.isArray(it.title) && it.title.length > 0) {
+      title = textOf(it.title[0]);
+    } else {
+      title = textOf(it.title) ?? textOf(it['dc:title']) ?? null;
+    }
+
     const titleKana = textOf(it['titleTranscription']) ?? textOf(it['dcndl:titleTranscription']) ?? null;
     const link   = textOf(it.link) ?? textOf(it.guid) ?? null;
+
+    // デバッグ: タイトル処理
+    if (index === 0) {
+      console.log('=== Title Processing ===');
+      console.log('it.title:', it.title);
+      console.log('Is Array:', Array.isArray(it.title));
+      console.log('Parsed title:', title);
+    }
 
     // creators
     const creators = asArray(it['creator'] ?? it['dc:creator'] ?? it['dc']?.creator).map((x) => textOf(x)).filter(Boolean) as string[];
@@ -107,7 +152,7 @@ export function parseNdlOpenSearch(xml: string): NdlFeed {
 
     const publisher = textOf(it['publisher']) ?? null;
 
-    // 年は dc:date（xsi:typeが付いてても値はテキスト）
+    // 年は dc:date（xsi:typeが付いてても値はテキスト、または数値）
     let pubYear = textOf(it['date']) ?? null;
     if (pubYear) {
       // "2021.2" みたいなのは年だけに寄せる（必要に応じて調整）
@@ -115,14 +160,37 @@ export function parseNdlOpenSearch(xml: string): NdlFeed {
       pubYear = m ? m[0] : pubYear;
     }
 
-    const issued = textOf(it['issued']) ?? null;
+    // issuedも数値の可能性がある
+    let issued: string | null = null;
+    if (it['issued'] != null) {
+      if (typeof it['issued'] === 'number') {
+        issued = String(it['issued']);
+      } else {
+        issued = textOf(it['issued']);
+      }
+    }
+
     const extent = textOf(it['extent']) ?? null;
     const price  = textOf(it['price']) ?? null;
 
     // 識別子（type属性で振り分け）
     let isbn13: string | null = null, ndlBibId: string | null = null, jpno: string | null = null, tohan: string | null = null;
 
-    for (const idNode of asArray(it['identifier'])) {
+    const identifiers = asArray(it['identifier']);
+    if (index === 0) {
+      console.log('=== Identifiers Debug ===');
+      console.log('Number of identifiers:', identifiers.length);
+      identifiers.forEach((id, i) => {
+        console.log(`Identifier ${i}:`, {
+          node: id,
+          '@_type': id?.['@_type'],
+          '@_xsi:type': id?.['@_xsi:type'],
+          value: textOf(id)
+        });
+      });
+    }
+
+    for (const idNode of identifiers) {
       const t = idNode?.['@_type'] || idNode?.['@_xsi:type'] || idNode?.['@_dcndl:ISBN']; // 念のため
       const val = textOf(idNode);
       if (!val) continue;
@@ -137,7 +205,20 @@ export function parseNdlOpenSearch(xml: string): NdlFeed {
     let ndlc: string | null = null;
     const subjects: string[] = [];
 
-    for (const sNode of asArray(it['subject'])) {
+    const subjectNodes = asArray(it['subject']);
+    if (index === 0) {
+      console.log('=== Subjects Debug ===');
+      console.log('Number of subjects:', subjectNodes.length);
+      subjectNodes.forEach((s, i) => {
+        console.log(`Subject ${i}:`, {
+          node: s,
+          '@_type': s?.['@_type'],
+          value: textOf(s)
+        });
+      });
+    }
+
+    for (const sNode of subjectNodes) {
       const t = String(sNode?.['@_type'] ?? '').toUpperCase();
       const val = textOf(sNode);
       if (!val) continue;
@@ -152,8 +233,19 @@ export function parseNdlOpenSearch(xml: string): NdlFeed {
     // seeAlso
     const seeAlso = asArray(it['seeAlso']).map((x)=>x?.['@_resource']).filter(Boolean) as string[];
 
-    // description（HTML）
-    const descriptionHtml = textOf(it['description']);
+    // description（HTML）- 配列の場合は最初のCDATAを取得
+    let descriptionHtml: string | null = null;
+    if (Array.isArray(it['description']) && it['description'].length > 0) {
+      // 配列の最初の要素がCDATAを持つオブジェクトか確認
+      const firstDesc = it['description'][0];
+      if (firstDesc && typeof firstDesc === 'object' && firstDesc['#cdata']) {
+        descriptionHtml = firstDesc['#cdata'];
+      } else {
+        descriptionHtml = textOf(firstDesc);
+      }
+    } else {
+      descriptionHtml = textOf(it['description']);
+    }
 
     return {
       title,
