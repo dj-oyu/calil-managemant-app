@@ -1,5 +1,5 @@
-import { loadCookies, saveCookies, toCookieHeader, isValidSession } from './vault';
-import { oauthLoginAndGetCookies } from './puppeteer-auth';
+import { loadCookies, saveCookies, toCookieHeader, isValidSession } from '../../auth/session/vault.store';
+import { oauthLoginAndGetCookies } from '../../auth/puppeteer/oauth-login';
 import type { Cookie } from 'puppeteer';
 import { create } from 'node:domain';
 

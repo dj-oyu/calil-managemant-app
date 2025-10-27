@@ -2,7 +2,7 @@
 
 import { mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { logger } from './logger';
+import { logger } from '../../../shared/logging/logger';
 
 const CACHE_DIR = './cache/covers';
 

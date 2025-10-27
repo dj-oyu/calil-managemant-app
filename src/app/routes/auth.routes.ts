@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { loadCookies, clearCookies, isValidSession, saveCookies } from '../vault';
-import { oauthLoginAndGetCookies } from '../puppeteer-auth';
+import { loadCookies, clearCookies, isValidSession, saveCookies } from '../../features/auth/session/vault.store';
+import { oauthLoginAndGetCookies } from '../../features/auth/puppeteer/oauth-login';
 import type { Cookie } from 'puppeteer';
 
 export const authRoutes = new Hono();
