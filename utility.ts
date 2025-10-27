@@ -16,18 +16,7 @@ export const NDLsearch = async (isbn: string ): Promise<NdlItem[] | null> => {
   const response = await fetch(`https://ndlsearch.ndl.go.jp/api/opensearch?isbn=${isbn}`);
   const xmlText = await response.text();
 
-  // デバッグ: 生のXMLを出力（最初の2000文字）
-  console.log('=== Raw XML Response (first 2000 chars) ===');
-  console.log(xmlText.substring(0, 2000));
-  console.log('=== XML Length:', xmlText.length, 'chars ===');
-
   const result = parseNdlOpenSearch(xmlText);
-
-  // デバッグ: パース結果のメタ情報
-  console.log('=== Parse Result Meta ===');
-  console.log('Total Results:', result.totalResults);
-  console.log('Items Per Page:', result.itemsPerPage);
-  console.log('Number of Items:', result.items.length);
 
   return result.items || null;
 }
@@ -118,14 +107,7 @@ export function parseNdlOpenSearch(xml: string): NdlFeed {
 
   const rawItems = asArray(get('item'));
 
-  const items: NdlItem[] = rawItems.map((it: any, index: number) => {
-    // デバッグ: 最初のアイテムの生データを出力
-    if (index === 0) {
-      console.log('=== First Item Raw Data ===');
-      console.log(JSON.stringify(it, null, 2).substring(0, 3000));
-      console.log('========================');
-    }
-
+  const items: NdlItem[] = rawItems.map((it: any) => {
     // 基本
     // titleが配列の場合は最初の要素を取得
     let title: string | null = null;
@@ -137,14 +119,6 @@ export function parseNdlOpenSearch(xml: string): NdlFeed {
 
     const titleKana = textOf(it['titleTranscription']) ?? textOf(it['dcndl:titleTranscription']) ?? null;
     const link   = textOf(it.link) ?? textOf(it.guid) ?? null;
-
-    // デバッグ: タイトル処理
-    if (index === 0) {
-      console.log('=== Title Processing ===');
-      console.log('it.title:', it.title);
-      console.log('Is Array:', Array.isArray(it.title));
-      console.log('Parsed title:', title);
-    }
 
     // creators
     const creators = asArray(it['creator'] ?? it['dc:creator'] ?? it['dc']?.creator).map((x) => textOf(x)).filter(Boolean) as string[];
@@ -177,18 +151,6 @@ export function parseNdlOpenSearch(xml: string): NdlFeed {
     let isbn13: string | null = null, ndlBibId: string | null = null, jpno: string | null = null, tohan: string | null = null;
 
     const identifiers = asArray(it['identifier']);
-    if (index === 0) {
-      console.log('=== Identifiers Debug ===');
-      console.log('Number of identifiers:', identifiers.length);
-      identifiers.forEach((id, i) => {
-        console.log(`Identifier ${i}:`, {
-          node: id,
-          '@_type': id?.['@_type'],
-          '@_xsi:type': id?.['@_xsi:type'],
-          value: textOf(id)
-        });
-      });
-    }
 
     for (const idNode of identifiers) {
       const t = idNode?.['@_type'] || idNode?.['@_xsi:type'] || idNode?.['@_dcndl:ISBN']; // 念のため
@@ -206,17 +168,6 @@ export function parseNdlOpenSearch(xml: string): NdlFeed {
     const subjects: string[] = [];
 
     const subjectNodes = asArray(it['subject']);
-    if (index === 0) {
-      console.log('=== Subjects Debug ===');
-      console.log('Number of subjects:', subjectNodes.length);
-      subjectNodes.forEach((s, i) => {
-        console.log(`Subject ${i}:`, {
-          node: s,
-          '@_type': s?.['@_type'],
-          value: textOf(s)
-        });
-      });
-    }
 
     for (const sNode of subjectNodes) {
       const t = String(sNode?.['@_type'] ?? '').toUpperCase();
