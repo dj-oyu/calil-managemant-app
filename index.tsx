@@ -231,73 +231,224 @@ const BookListPage: FC<{ books: Book[] }> = ({ books }: { books: Book[] }) => (
                 ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 1rem; }
 
                 /* Book Card Layout */
-                .book-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); overflow: hidden; }
-                .book-content { display: flex; gap: 1rem; padding: 1rem 1.25rem; }
+                .book-card {
+                    background: #fff;
+                    border-radius: 10px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    overflow: hidden;
+                    transition: box-shadow 0.3s ease;
+                }
+                .book-card:hover {
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                }
+                .book-content {
+                    display: flex;
+                    gap: 1rem;
+                    padding: 1rem 1.25rem;
+                    align-items: flex-start;
+                }
                 .book-info { flex: 1; min-width: 0; }
-                .book-cover { flex-shrink: 0; width: 80px; }
+                .book-cover {
+                    flex-shrink: 0;
+                    width: 80px;
+                    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+                }
 
-                .title { font-size: 1.125rem; font-weight: 600; margin-bottom: 0.4rem; }
-                .meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; font-size: 0.9rem; color: #57606a; }
-                .meta span { display: inline-flex; align-items: center; gap: 0.3rem; }
-                .isbn { font-family: "Fira Code", Menlo, Consolas, monospace; font-size: 0.85rem; }
+                .title {
+                    font-size: 1.125rem;
+                    font-weight: 600;
+                    margin-bottom: 0.5rem;
+                    line-height: 1.4;
+                    color: #1a1a1a;
+                    display: -webkit-box;
+                    -webkit-line-clamp: 2;
+                    -webkit-box-orient: vertical;
+                    overflow: hidden;
+                }
+                .meta {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 0.5rem 1rem;
+                    font-size: 0.875rem;
+                    color: #57606a;
+                    line-height: 1.6;
+                }
+                .meta span {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.3rem;
+                }
+                .meta span::before {
+                    content: '•';
+                    color: #d0d7de;
+                    font-weight: bold;
+                }
+                .meta span:first-child::before {
+                    content: '';
+                }
+                .isbn {
+                    font-family: "Fira Code", Menlo, Consolas, monospace;
+                    font-size: 0.8rem;
+                    background: #f6f8fa;
+                    padding: 0.15rem 0.4rem;
+                    border-radius: 3px;
+                }
 
-                /* Cover Image */
+                /* Cover Image - Cropped Icon Style */
                 .cover-placeholder {
                     width: 80px;
-                    height: 120px;
+                    height: 80px;
                     background: linear-gradient(135deg, #f6f8fa 0%, #e1e4e8 100%);
-                    border-radius: 4px;
+                    border-radius: 6px;
                     display: flex;
-                    align-items: center;
+                    align-items: flex-start;
                     justify-content: center;
                     border: 1px solid #d0d7de;
                     position: relative;
                     overflow: hidden;
+                    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
                 }
+
                 .cover-placeholder img {
                     width: 100%;
-                    height: 100%;
+                    height: auto;
                     object-fit: cover;
+                    object-position: top;
                     display: block;
+                    min-height: 100%;
+                    position: relative;
+                    z-index: 0;
                 }
+
+                /* Gradient mask overlay on top of image */
+                .cover-placeholder::after {
+                    content: '';
+                    position: absolute;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    height: 30px;
+                    background: linear-gradient(to bottom, transparent 0%, #fff 100%);
+                    pointer-events: none;
+                    transition: opacity 0.4s ease;
+                    z-index: 1;
+                }
+
                 .cover-loading {
-                    font-size: 2rem;
+                    font-size: 1.5rem;
                     opacity: 0.3;
+                    margin-top: 0.5rem;
                 }
+
                 .cover-placeholder.loaded .cover-loading { display: none; }
+
                 .cover-placeholder.error {
                     background: #f6f8fa;
                     border: 1px dashed #d0d7de;
+                    align-items: center;
                 }
                 .cover-placeholder.error .cover-loading {
                     opacity: 0.2;
-                    font-size: 1.5rem;
+                    font-size: 1.2rem;
+                    margin-top: 0;
                 }
 
                 /* Expanded cover when details is open */
                 .book-card:has(details.ndl[open]) .cover-placeholder {
-                    width: 120px;
                     height: 180px;
-                    transition: width 0.3s ease, height 0.3s ease;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
                 }
+
+                .book-card:has(details.ndl[open]) .cover-placeholder::after {
+                    opacity: 0;
+                }
+
                 .book-card:has(details.ndl[open]) .book-cover {
                     width: 120px;
                 }
-                details.ndl { margin-top: 0.75rem; }
-                details.ndl summary { cursor: pointer; color: #0969da; outline: none; }
-                details.ndl summary:focus-visible { box-shadow: 0 0 0 3px rgba(9,105,218,0.25); border-radius: 6px; }
-                details.ndl[open] summary { font-weight: 600; }
-                .ndl-content { font-size: 0.9rem; padding: 0.5rem 0; }
+
+                .book-card:has(details.ndl[open]) .cover-placeholder {
+                    width: 120px;
+                }
+                details.ndl {
+                    margin-top: 0.75rem;
+                    padding: 0.75rem;
+                    background: #f6f8fa;
+                    border-radius: 6px;
+                    border: 1px solid #e1e4e8;
+                    transition: all 0.3s ease;
+                }
+                details.ndl[open] {
+                    background: #fff;
+                    border-color: #0969da;
+                }
+                details.ndl summary {
+                    cursor: pointer;
+                    color: #0969da;
+                    outline: none;
+                    font-weight: 500;
+                    font-size: 0.9rem;
+                    user-select: none;
+                    list-style: none;
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                }
+                details.ndl summary::-webkit-details-marker {
+                    display: none;
+                }
+                details.ndl summary::before {
+                    content: '▶';
+                    font-size: 0.7rem;
+                    transition: transform 0.3s ease;
+                    display: inline-block;
+                }
+                details.ndl[open] summary::before {
+                    transform: rotate(90deg);
+                }
+                details.ndl summary:hover {
+                    color: #0550ae;
+                }
+                details.ndl summary:focus-visible {
+                    box-shadow: 0 0 0 3px rgba(9,105,218,0.15);
+                    border-radius: 4px;
+                }
+                details.ndl[open] summary {
+                    font-weight: 600;
+                    margin-bottom: 0.75rem;
+                    padding-bottom: 0.75rem;
+                    border-bottom: 1px solid #e1e4e8;
+                }
+                .ndl-content {
+                    font-size: 0.9rem;
+                    animation: slideDown 0.3s ease;
+                }
+                @keyframes slideDown {
+                    from {
+                        opacity: 0;
+                        transform: translateY(-10px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
 
                 /* Book Detail Styles */
                 .book-detail {
-                    background: linear-gradient(to right, #f6f8fa 0%, transparent 100%);
-                    border-radius: 8px;
-                    padding: 1rem;
+                    background: transparent;
+                    border-radius: 6px;
+                    padding: 0;
                 }
-                .detail-section { margin-bottom: 1.25rem; }
+                .detail-section { margin-bottom: 1rem; }
                 .detail-section:last-child { margin-bottom: 0; }
-                .detail-primary { background: #fff; padding: 0.75rem; border-radius: 6px; border: 1px solid #d0d7de; }
+                .detail-primary {
+                    background: #f6f8fa;
+                    padding: 0.875rem;
+                    border-radius: 6px;
+                    border: 1px solid #e1e4e8;
+                }
                 .section-title {
                     font-size: 0.8rem;
                     font-weight: 700;
@@ -517,13 +668,7 @@ app.post('/log/clear', (c) => {
     return c.json({ success: true });
 });
 
-// テストページ
-app.get('/test-cover', async (c) => {
-    const file = Bun.file('./test-cover.html');
-    return c.html(await file.text());
-});
-
-// 例: リスト取得（Cookieは内部で自動維持）
+// リスト取得（Cookieは内部で自動維持）
 app.get('/', async (c) => {
     const res = await fetchBookList();
     const books = (typeof res === 'string' ? JSON.parse(res) : res) as Book[];
