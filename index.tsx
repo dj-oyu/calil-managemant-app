@@ -5,8 +5,12 @@ import { authRoutes } from './routes/auth';
 import { fetchBookList } from './calil-fetch';
 import { convertISBN10to13, NDLsearch, type NdlItem } from './utility';
 import { logger } from './logger';
+import { initCoverCache, getCoverImage } from './cover-cache';
 
 const app = new Hono();
+
+// Initialize cover cache on startup
+await initCoverCache();
 
 // TypeScriptファイルを動的にトランスパイルして配信
 app.get('/public/:filename{.+\\.js$}', async (c) => {
@@ -15,9 +19,12 @@ app.get('/public/:filename{.+\\.js$}', async (c) => {
     const tsFilename = filename.replace(/\.js$/, '.ts');
     const tsPath = `./public/${tsFilename}`;
 
+    logger.debug('Transpiling request', { filename, tsPath });
+
     // ファイルの存在確認
     const file = Bun.file(tsPath);
     if (!(await file.exists())) {
+        logger.warn('TypeScript file not found', { tsPath });
         return c.text('Not Found', 404);
     }
 
@@ -30,21 +37,54 @@ app.get('/public/:filename{.+\\.js$}', async (c) => {
 
         if (transpiled.success && transpiled.outputs[0]) {
             const jsCode = await transpiled.outputs[0].text();
+            logger.info('Transpiled successfully', {
+                filename,
+                size: jsCode.length,
+                outputCount: transpiled.outputs.length
+            });
             return c.text(jsCode, 200, {
                 'Content-Type': 'application/javascript; charset=utf-8',
                 'Cache-Control': 'public, max-age=3600',
             });
         }
 
-        console.error('Transpilation failed:', transpiled.logs);
+        logger.error('Transpilation failed', {
+            filename,
+            success: transpiled.success,
+            logs: transpiled.logs
+        });
         return c.text('Transpilation Error', 500);
     } catch (error) {
-        console.error('Error transpiling TypeScript:', error);
+        logger.error('Error transpiling TypeScript', { filename, error: String(error) });
         return c.text('Internal Server Error', 500);
     }
 });
 
 app.route('/auth', authRoutes);
+
+// カバー画像取得エンドポイント（キャッシュ付き）
+app.get('/api/cover/:isbn', async (c) => {
+    const isbn = c.req.param('isbn');
+
+    const result = await getCoverImage(isbn);
+
+    if (!result) {
+        return c.notFound();
+    }
+
+    // Bunのファイルを直接返す
+    const file = Bun.file(result.path);
+    const arrayBuffer = await file.arrayBuffer();
+
+    return new Response(arrayBuffer, {
+        status: 200,
+        headers: {
+            'Content-Type': result.contentType,
+            'Cache-Control': 'public, max-age=2592000', // 30 days
+            'Content-Length': String(arrayBuffer.byteLength),
+        },
+    });
+});
 
 type Book = {
     id: string;
@@ -183,16 +223,66 @@ const BookListPage: FC<{ books: Book[] }> = ({ books }: { books: Book[] }) => (
             <meta charSet="utf-8" />
             <title>Wish List</title>
             <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <meta name="cover-max-concurrent" content="2" />
             <style>{`
                 body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; color: #24292f; }
                 main { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
                 h1 { font-size: 1.75rem; margin-bottom: 1.5rem; }
                 ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 1rem; }
-                li { padding: 1rem 1.25rem; background: #fff; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+
+                /* Book Card Layout */
+                .book-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); overflow: hidden; }
+                .book-content { display: flex; gap: 1rem; padding: 1rem 1.25rem; }
+                .book-info { flex: 1; min-width: 0; }
+                .book-cover { flex-shrink: 0; width: 80px; }
+
                 .title { font-size: 1.125rem; font-weight: 600; margin-bottom: 0.4rem; }
                 .meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; font-size: 0.9rem; color: #57606a; }
                 .meta span { display: inline-flex; align-items: center; gap: 0.3rem; }
                 .isbn { font-family: "Fira Code", Menlo, Consolas, monospace; font-size: 0.85rem; }
+
+                /* Cover Image */
+                .cover-placeholder {
+                    width: 80px;
+                    height: 120px;
+                    background: linear-gradient(135deg, #f6f8fa 0%, #e1e4e8 100%);
+                    border-radius: 4px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border: 1px solid #d0d7de;
+                    position: relative;
+                    overflow: hidden;
+                }
+                .cover-placeholder img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    display: block;
+                }
+                .cover-loading {
+                    font-size: 2rem;
+                    opacity: 0.3;
+                }
+                .cover-placeholder.loaded .cover-loading { display: none; }
+                .cover-placeholder.error {
+                    background: #f6f8fa;
+                    border: 1px dashed #d0d7de;
+                }
+                .cover-placeholder.error .cover-loading {
+                    opacity: 0.2;
+                    font-size: 1.5rem;
+                }
+
+                /* Expanded cover when details is open */
+                .book-card:has(details.ndl[open]) .cover-placeholder {
+                    width: 120px;
+                    height: 180px;
+                    transition: width 0.3s ease, height 0.3s ease;
+                }
+                .book-card:has(details.ndl[open]) .book-cover {
+                    width: 120px;
+                }
                 details.ndl { margin-top: 0.75rem; }
                 details.ndl summary { cursor: pointer; color: #0969da; outline: none; }
                 details.ndl summary:focus-visible { box-shadow: 0 0 0 3px rgba(9,105,218,0.25); border-radius: 6px; }
@@ -274,26 +364,42 @@ const BookListPage: FC<{ books: Book[] }> = ({ books }: { books: Book[] }) => (
                     {books.map((book) => {
                         const isbn13 = convertISBN10to13(book.isbn);
                         return (
-                            <li key={book.isbn}>
-                                <div class="title">{book.title}</div>
-                                <div class="meta">
-                                    <span>著者: {book.author || '不明'}</span>
-                                    <span>出版社: {book.publisher || '不明'}</span>
-                                    <span>刊行日: {book.pubdate || '不明'}</span>
-                                    <span class="isbn">ISBN: {isbn13 || '―'}</span>
+                            <li key={book.isbn} class="book-card">
+                                <div class="book-content">
+                                    <div class="book-info">
+                                        <div class="title">{book.title}</div>
+                                        <div class="meta">
+                                            <span>著者: {book.author || '不明'}</span>
+                                            <span>出版社: {book.publisher || '不明'}</span>
+                                            <span>刊行日: {book.pubdate || '不明'}</span>
+                                            <span class="isbn">ISBN: {isbn13 || '―'}</span>
+                                        </div>
+                                        {isbn13 && (
+                                            <details class="ndl" data-isbn={isbn13}>
+                                                <summary>詳細情報を表示</summary>
+                                                <div class="ndl-content"></div>
+                                            </details>
+                                        )}
+                                    </div>
+                                    {isbn13 && (
+                                        <div class="book-cover">
+                                            <div
+                                                class="cover-placeholder"
+                                                data-isbn={isbn13}
+                                                data-lazy-cover=""
+                                            >
+                                                <span class="cover-loading">📚</span>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                                {isbn13 && (
-                                    <details class="ndl" data-isbn={isbn13}>
-                                        <summary>詳細情報を表示</summary>
-                                        <div class="ndl-content"></div>
-                                    </details>
-                                )}
                             </li>
                         );
                     })}
                 </ul>
             </main>
             <script type="module" src="/public/accordion.js"></script>
+            <script type="module" src="/public/cover-loader.js"></script>
         </body>
     </html>
 );
@@ -409,6 +515,12 @@ app.get('/log', (c) => {
 app.post('/log/clear', (c) => {
     logger.clear();
     return c.json({ success: true });
+});
+
+// テストページ
+app.get('/test-cover', async (c) => {
+    const file = Bun.file('./test-cover.html');
+    return c.html(await file.text());
 });
 
 // 例: リスト取得（Cookieは内部で自動維持）
