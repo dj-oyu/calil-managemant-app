@@ -96,9 +96,23 @@ async function fetchBookPage(cookie: Cookie, yomitaiToken: string, page: number)
 
 export async function fetchBookList(): Promise<BookElement[]> {
     let v = await loadCookies();
-    if (!v) v = await ensureSession();
+    if (!v || !(await isValidSession(v))) {
+        v = await ensureSession();
+    }
 
-    const yomitaiToken = await fetchYomitaiToken(v.cookies[0]!);
+    let yomitaiToken: string;
+    try {
+        yomitaiToken = await fetchYomitaiToken(v.cookies[0]!);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('Unauthorized')) {
+            v = await ensureSession();
+            yomitaiToken = await fetchYomitaiToken(v.cookies[0]!);
+        } else {
+            throw error;
+        }
+    }
+
     const totalCount = await fetchTotalCount(v.cookies[0]!, yomitaiToken);
     const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
