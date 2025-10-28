@@ -217,17 +217,113 @@ const renderBookDetail = (item: NdlItem) => {
     );
 };
 
-const BookListPage: FC<{ books: Book[] }> = ({ books }: { books: Book[] }) => (
+const BookCard: FC<{ book: Book }> = ({ book }) => {
+    const isbn13 = convertISBN10to13(book.isbn);
+    return (
+        <li class="book-card">
+            <div class="book-content">
+                <div class="book-info">
+                    <div class="title">{book.title}</div>
+                    <div class="meta">
+                        <span>著者: {book.author || '不明'}</span>
+                        <span>出版社: {book.publisher || '不明'}</span>
+                        <span>刊行日: {book.pubdate || '不明'}</span>
+                        <span class="isbn">ISBN: {isbn13 || '―'}</span>
+                    </div>
+                    {isbn13 && (
+                        <details class="ndl" data-isbn={isbn13}>
+                            <summary>詳細情報を表示</summary>
+                            <div class="ndl-content"></div>
+                        </details>
+                    )}
+                </div>
+                {isbn13 && (
+                    <div class="book-cover">
+                        <div
+                            class="cover-placeholder"
+                            data-isbn={isbn13}
+                            data-lazy-cover=""
+                        >
+                            <span class="cover-loading">📚</span>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </li>
+    );
+};
+
+const BookList: FC<{ books: Book[] }> = ({ books }) => (
+    <ul>
+        {books.map((book) => (
+            <BookCard key={book.isbn} book={book} />
+        ))}
+    </ul>
+);
+
+const BookListPage: FC<{ books: Book[]; readBooks: Book[]; activeTab?: 'wish' | 'read' }> = ({ books, readBooks, activeTab = 'wish' }) => (
     <html lang="ja">
         <head>
             <meta charSet="utf-8" />
-            <title>Wish List</title>
+            <title>Book Lists</title>
             <meta name="viewport" content="width=device-width, initial-scale=1" />
             <meta name="cover-max-concurrent" content="2" />
             <style>{`
                 body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; color: #24292f; }
                 main { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
-                h1 { font-size: 1.75rem; margin-bottom: 1.5rem; }
+                h1 { font-size: 1.75rem; margin-bottom: 1rem; }
+                
+                /* Tab Navigation */
+                .tab-nav {
+                    display: flex;
+                    gap: 0.5rem;
+                    margin-bottom: 1.5rem;
+                    border-bottom: 2px solid #e1e4e8;
+                }
+                .tab-button {
+                    padding: 0.75rem 1.5rem;
+                    background: none;
+                    border: none;
+                    border-bottom: 3px solid transparent;
+                    cursor: pointer;
+                    font-size: 1rem;
+                    font-weight: 600;
+                    color: #57606a;
+                    transition: all 0.2s ease;
+                    position: relative;
+                    bottom: -2px;
+                    text-decoration: none;
+                    display: inline-block;
+                }
+                .tab-button:hover {
+                    color: #24292f;
+                    background: #f6f8fa;
+                }
+                .tab-button.active {
+                    color: #0969da;
+                    border-bottom-color: #0969da;
+                }
+                .tab-count {
+                    display: inline-block;
+                    margin-left: 0.5rem;
+                    padding: 0.15rem 0.5rem;
+                    background: #e1e4e8;
+                    border-radius: 12px;
+                    font-size: 0.85rem;
+                    font-weight: 500;
+                }
+                .tab-button.active .tab-count {
+                    background: #ddf4ff;
+                    color: #0969da;
+                }
+                
+                /* Tab Content */
+                .tab-content {
+                    display: none;
+                }
+                .tab-content.active {
+                    display: block;
+                }
                 ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 1rem; }
 
                 /* Book Card Layout */
@@ -510,44 +606,26 @@ const BookListPage: FC<{ books: Book[] }> = ({ books }: { books: Book[] }) => (
         </head>
         <body>
             <main>
-                <h1>読みたい本リスト</h1>
-                <ul>
-                    {books.map((book) => {
-                        const isbn13 = convertISBN10to13(book.isbn);
-                        return (
-                            <li key={book.isbn} class="book-card">
-                                <div class="book-content">
-                                    <div class="book-info">
-                                        <div class="title">{book.title}</div>
-                                        <div class="meta">
-                                            <span>著者: {book.author || '不明'}</span>
-                                            <span>出版社: {book.publisher || '不明'}</span>
-                                            <span>刊行日: {book.pubdate || '不明'}</span>
-                                            <span class="isbn">ISBN: {isbn13 || '―'}</span>
-                                        </div>
-                                        {isbn13 && (
-                                            <details class="ndl" data-isbn={isbn13}>
-                                                <summary>詳細情報を表示</summary>
-                                                <div class="ndl-content"></div>
-                                            </details>
-                                        )}
-                                    </div>
-                                    {isbn13 && (
-                                        <div class="book-cover">
-                                            <div
-                                                class="cover-placeholder"
-                                                data-isbn={isbn13}
-                                                data-lazy-cover=""
-                                            >
-                                                <span class="cover-loading">📚</span>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </li>
-                        );
-                    })}
-                </ul>
+                <h1>📚 マイブックリスト</h1>
+
+                <nav class="tab-nav">
+                    <a href="/?tab=wish" class={`tab-button ${activeTab === 'wish' ? 'active' : ''}`}>
+                        📖 読みたい本
+                        <span class="tab-count">{books.length}</span>
+                    </a>
+                    <a href="/?tab=read" class={`tab-button ${activeTab === 'read' ? 'active' : ''}`}>
+                        ✅ 読んだ本
+                        <span class="tab-count">{readBooks.length}</span>
+                    </a>
+                </nav>
+
+                <div class={`tab-content ${activeTab === 'wish' ? 'active' : ''}`}>
+                    <BookList books={books} />
+                </div>
+
+                <div class={`tab-content ${activeTab === 'read' ? 'active' : ''}`}>
+                    <BookList books={readBooks} />
+                </div>
             </main>
             <script type="module" src="/public/accordion.js"></script>
             <script type="module" src="/public/cover-loader.js"></script>
@@ -670,9 +748,17 @@ app.post('/log/clear', (c) => {
 
 // リスト取得（Cookieは内部で自動維持）
 app.get('/', async (c) => {
-    const res = await fetchBookList();
-    const books = (typeof res === 'string' ? JSON.parse(res) : res) as Book[];
-    return c.html(<BookListPage books={books} />);
+    const tab = (c.req.query('tab') as 'wish' | 'read') || 'wish';
+
+    const [wishBooks, readBooks] = await Promise.all([
+        fetchBookList('wish'),
+        fetchBookList('read')
+    ]);
+
+    const books = (typeof wishBooks === 'string' ? JSON.parse(wishBooks) : wishBooks) as Book[];
+    const read = (typeof readBooks === 'string' ? JSON.parse(readBooks) : readBooks) as Book[];
+
+    return c.html(<BookListPage books={books} readBooks={read} activeTab={tab} />);
 });
 
 serve({ fetch: app.fetch, port: 8787 });
