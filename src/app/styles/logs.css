@@ -1,0 +1,123 @@
+body {
+    margin: 0;
+    font-family: "Fira Code", Menlo, Consolas, monospace;
+    background: #0d1117;
+    color: #c9d1d9;
+    font-size: 13px;
+}
+
+header {
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    padding: 1rem 1.5rem;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+h1 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #58a6ff;
+}
+
+.controls {
+    margin-top: 0.75rem;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.controls button,
+.controls a {
+    padding: 0.4rem 0.8rem;
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    text-decoration: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.controls button:hover,
+.controls a:hover {
+    background: #30363d;
+}
+
+main {
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.log-entry {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.log-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.log-time {
+    color: #8b949e;
+    font-size: 0.85rem;
+}
+
+.log-level {
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.log-level.info {
+    background: #1f6feb;
+    color: white;
+}
+
+.log-level.warn {
+    background: #d29922;
+    color: white;
+}
+
+.log-level.error {
+    background: #da3633;
+    color: white;
+}
+
+.log-level.debug {
+    background: #6e7681;
+    color: white;
+}
+
+.log-message {
+    color: #c9d1d9;
+    line-height: 1.6;
+}
+
+.log-data {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    background: #0d1117;
+    border-radius: 4px;
+    border-left: 3px solid #30363d;
+    overflow-x: auto;
+}
+
+.log-data pre {
+    margin: 0;
+    color: #79c0ff;
+}
+
+.empty {
+    text-align: center;
+    padding: 3rem;
+    color: #8b949e;
+}
