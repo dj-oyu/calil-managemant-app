@@ -34,39 +34,48 @@ type YomitaiTokenResponse = { 'Calil-Yomitai-Token': string };
 
 type TotalCountResponse = { totalCount: number };
 
+type ListType = 'wish' | 'read';
+
+interface FetchListOptions {
+    cookie: Cookie;
+    yomitaiToken?: YomitaiTokenResponse;
+    listType?: ListType;
+    page?: number;
+}
+
 // Utility function to create common headers
-function createHeaders(cookie: Cookie, yomitaiToken?: string): Record<string, string> {
+function createHeaders({ cookie, yomitaiToken }: FetchListOptions): Record<string, string> {
     const headers: Record<string, string> = {
         "accept": "*/*",
-        "Referer": "https://calil.jp/list/",
+        "Referer": "https://calil.jp/list",
         "Cookie": `${cookie.name}=${cookie.value}`,
     };
     if (yomitaiToken) {
-        headers["calil-yomitai-token"] = yomitaiToken;
+        headers["Calil-Yomitai-Token"] = yomitaiToken['Calil-Yomitai-Token'];
     }
     return headers;
 }
 
 // Function to fetch Yomitai token
-async function fetchYomitaiToken(cookie: Cookie): Promise<string> {
+async function fetchYomitaiToken(cookie: Cookie): Promise<YomitaiTokenResponse> {
     const response = await fetch(`${BASE_URL}/infrastructure/v2/get_yomitai_token`, {
-        headers: createHeaders(cookie),
+        headers: createHeaders({cookie}),
         method: "GET"
     });
     if (!response.ok) {
         throw new Error(`Failed to fetch Yomitai token: ${response.statusText}`);
     }
     const data: YomitaiTokenResponse = await response.json();
-    return data['Calil-Yomitai-Token'];
+    return data;
 }
 
-async function fetchTotalCount(cookie: Cookie, yomitaiToken: string): Promise<number> {
+async function fetchTotalCount({ cookie, yomitaiToken, listType }: FetchListOptions): Promise<number> {
     const response = await fetch(`${BASE_URL}/api/list/v2/get_total_count`, {
         headers: {
-            ...createHeaders(cookie, yomitaiToken),
+            ...createHeaders({cookie, yomitaiToken}),
             "content-type": "application/json",
         },
-        body: JSON.stringify({ name: "wish", startCount: 0 }),
+        body: JSON.stringify({ name: listType, startCount: 0 }),
         method: "POST"
     });
     if (!response.ok) {
@@ -77,30 +86,30 @@ async function fetchTotalCount(cookie: Cookie, yomitaiToken: string): Promise<nu
     return data.totalCount;
 }
 
-async function fetchBookPage(cookie: Cookie, yomitaiToken: string, page: number): Promise<BookElement[]> {
+async function fetchBookPage({ cookie, yomitaiToken, listType, page }: FetchListOptions): Promise<BookElement[]> {
     const response = await fetch(`${BASE_URL}/api/list/v2/`, {
         headers: {
-            ...createHeaders(cookie, yomitaiToken),
+            ...createHeaders({cookie, yomitaiToken}),
             "content-type": "application/json",
         },
-        body: JSON.stringify({ name: "wish", page, perCount: ITEMS_PER_PAGE }),
+        body: JSON.stringify({ name: listType, page, perCount: ITEMS_PER_PAGE }),
         method: "POST"
     });
     if (!response.ok) {
-        console.error(`request headers: ${JSON.stringify(createHeaders(cookie, yomitaiToken))}`);
+        console.error(`request headers: ${JSON.stringify(createHeaders({cookie, yomitaiToken}))}`);
         throw new Error(`Failed to fetch book page ${page}: ${response.statusText}`);
     }
     const data: BookListResponse = await response.json();
     return data.books;
 }
 
-export async function fetchBookList(): Promise<BookElement[]> {
+export async function fetchBookList(listType: ListType): Promise<BookElement[]> {
     let v = await loadCookies();
     if (!v || !(await isValidSession(v))) {
         v = await ensureSession();
     }
 
-    let yomitaiToken: string;
+    let yomitaiToken: YomitaiTokenResponse;
     try {
         yomitaiToken = await fetchYomitaiToken(v.cookies[0]!);
     } catch (error) {
@@ -113,12 +122,12 @@ export async function fetchBookList(): Promise<BookElement[]> {
         }
     }
 
-    const totalCount = await fetchTotalCount(v.cookies[0]!, yomitaiToken);
+    const totalCount = await fetchTotalCount({ cookie: v.cookies[0]!, yomitaiToken , listType});
     const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
     const allBooks: BookElement[] = [];
     for (let page = 1; page <= totalPages; page++) {
-        const books = await fetchBookPage(v.cookies[0]!, yomitaiToken, page);
+        const books = await fetchBookPage({ cookie: v.cookies[0]!, yomitaiToken, listType, page });
         allBooks.push(...books);
     }
     return allBooks;
