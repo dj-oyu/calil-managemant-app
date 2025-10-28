@@ -1,0 +1,86 @@
+:root {
+    /* Colors - Primary */
+    --color-primary: #0969da;
+    --color-primary-hover: #0550ae;
+    --color-primary-dark: #033d8b;
+    --color-primary-light: #ddf4ff;
+
+    /* Colors - Text */
+    --color-text-primary: #24292f;
+    --color-text-secondary: #57606a;
+    --color-text-tertiary: #8b949e;
+    --color-text-dark: #1a1a1a;
+    --color-text-light: #c9d1d9;
+
+    /* Colors - Background */
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f6f8fa;
+    --color-bg-tertiary: #f5f5f5;
+    --color-bg-dark: #0d1117;
+    --color-bg-dark-elevated: #161b22;
+    --color-bg-dark-subtle: #21262d;
+
+    /* Colors - Border */
+    --color-border-primary: #d0d7de;
+    --color-border-secondary: #e1e4e8;
+    --color-border-tertiary: #f0f0f0;
+    --color-border-dark: #30363d;
+
+    /* Colors - Status */
+    --color-success: #1a7f37;
+    --color-warning: #d29922;
+    --color-error: #da3633;
+    --color-info: #1f6feb;
+    --color-info-bright: #58a6ff;
+    --color-debug: #6e7681;
+
+    /* Colors - Code */
+    --color-code-bg: #f6f8fa;
+    --color-code-text: #79c0ff;
+
+    /* Spacing */
+    --spacing-xs: 0.25rem;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+    --spacing-xl: 2rem;
+
+    /* Border Radius */
+    --radius-sm: 3px;
+    --radius-md: 6px;
+    --radius-lg: 10px;
+    --radius-xl: 12px;
+
+    /* Font Sizes */
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.8rem;
+    --font-size-base: 0.875rem;
+    --font-size-md: 0.9rem;
+    --font-size-lg: 1rem;
+    --font-size-xl: 1.125rem;
+    --font-size-2xl: 1.25rem;
+    --font-size-3xl: 1.75rem;
+
+    /* Font Families */
+    --font-family-base: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-family-mono: "Fira Code", Menlo, Consolas, monospace;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+    --shadow-lg: 0 2px 8px rgba(0, 0, 0, 0.15);
+    --shadow-primary: 0 2px 4px rgba(9, 105, 218, 0.2);
+    --shadow-primary-hover: 0 4px 8px rgba(9, 105, 218, 0.3);
+    --shadow-focus: 0 0 0 3px rgba(9, 105, 218, 0.15);
+
+    /* Transitions */
+    --transition-fast: 0.2s ease;
+    --transition-base: 0.3s ease;
+    --transition-smooth: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Z-index */
+    --z-base: 0;
+    --z-elevated: 1;
+    --z-overlay: 10;
+    --z-modal: 100;
+}
