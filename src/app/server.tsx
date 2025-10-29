@@ -12,14 +12,17 @@ const app = new Hono();
 // Initialize cover cache on startup
 await initCoverCache();
 
+// Define module directory URL for path resolution
+const moduleDir = new URL('.', import.meta.url);
+
 // CSSファイルを配信
 app.get('/public/styles/:filename{.+\\.css$}', async (c) => {
     const filename = c.req.param('filename');
-    const cssPath = `./src/app/styles/${filename}`;
+    const cssUrl = new URL(`./styles/${filename}`, moduleDir);
 
-    const file = Bun.file(cssPath);
+    const file = Bun.file(cssUrl);
     if (!(await file.exists())) {
-        logger.warn('CSS file not found', { cssPath });
+        logger.warn('CSS file not found', { cssUrl: cssUrl.href });
         return c.text('Not Found', 404);
     }
 
@@ -35,20 +38,20 @@ app.get('/public/:filename{.+\\.js$}', async (c) => {
     const filename = c.req.param('filename');
     // .js を .ts に変換
     const tsFilename = filename.replace(/\.js$/, '.ts');
-    const tsPath = `./client/scripts/${tsFilename}`;
+    const tsUrl = new URL(`../../client/scripts/${tsFilename}`, moduleDir);
 
-    logger.debug('Transpiling request', { filename, tsPath });
+    logger.debug('Transpiling request', { filename, tsUrl: tsUrl.href });
 
     // ファイルの存在確認
-    const file = Bun.file(tsPath);
+    const file = Bun.file(tsUrl);
     if (!(await file.exists())) {
-        logger.warn('TypeScript file not found', { tsPath });
+        logger.warn('TypeScript file not found', { tsUrl: tsUrl.href });
         return c.text('Not Found', 404);
     }
 
     try {
         const transpiled = await Bun.build({
-            entrypoints: [tsPath],
+            entrypoints: [tsUrl.pathname],
             target: 'browser',
             minify: false,
         });
@@ -57,6 +60,7 @@ app.get('/public/:filename{.+\\.js$}', async (c) => {
             const jsCode = await transpiled.outputs[0].text();
             logger.info('Transpiled successfully', {
                 filename,
+                tsPath: tsUrl.pathname,
                 size: jsCode.length,
                 outputCount: transpiled.outputs.length
             });
@@ -68,12 +72,17 @@ app.get('/public/:filename{.+\\.js$}', async (c) => {
 
         logger.error('Transpilation failed', {
             filename,
+            tsUrl: tsUrl.href,
             success: transpiled.success,
             logs: transpiled.logs
         });
         return c.text('Transpilation Error', 500);
     } catch (error) {
-        logger.error('Error transpiling TypeScript', { filename, error: String(error) });
+        logger.error('Error transpiling TypeScript', { 
+            filename, 
+            tsUrl: tsUrl.href,
+            error: String(error) 
+        });
         return c.text('Internal Server Error', 500);
     }
 });
