@@ -34,10 +34,10 @@ app.get('/public/styles/:filename{.+\\.css$}', async (c) => {
 });
 
 // TypeScriptファイルを動的にトランスパイルして配信
-app.get('/public/:filename{.+\\.js$}', async (c) => {
+app.get('/public/:filename{.+\\.jsx?$}', async (c) => {
     const filename = c.req.param('filename');
-    // .js を .ts に変換
-    const tsFilename = filename.replace(/\.js$/, '.ts');
+    // .js を .ts に変換 (拡張子が .jsx の場合も考慮)
+    const tsFilename = filename.replace(/\.js(?=x?$)/, '.ts');
     const tsUrl = new URL(`../../client/scripts/${tsFilename}`, moduleDir);
 
     logger.debug('Transpiling request', { filename, tsUrl: tsUrl.href });
@@ -125,125 +125,6 @@ type Book = {
     updated: string;
 };
 
-const renderBookDetail = (item: NdlItem) => {
-    return (
-        <div class="book-detail">
-            {/* 主要情報 */}
-            <section class="detail-section detail-primary">
-                {item.title && (
-                    <div class="detail-row">
-                        <span class="detail-label">タイトル</span>
-                        <span class="detail-value">{item.title}</span>
-                    </div>
-                )}
-                {item.titleKana && (
-                    <div class="detail-row detail-secondary">
-                        <span class="detail-label">ヨミ</span>
-                        <span class="detail-value detail-kana">{item.titleKana}</span>
-                    </div>
-                )}
-                {item.creators.length > 0 && (
-                    <div class="detail-row">
-                        <span class="detail-label">著者</span>
-                        <span class="detail-value">{item.creators.join(', ')}</span>
-                    </div>
-                )}
-                {item.creatorsKana.length > 0 && (
-                    <div class="detail-row detail-secondary">
-                        <span class="detail-label">著者ヨミ</span>
-                        <span class="detail-value detail-kana">{item.creatorsKana.join(', ')}</span>
-                    </div>
-                )}
-            </section>
-
-            {/* 出版情報 */}
-            <section class="detail-section">
-                <h4 class="section-title">出版情報</h4>
-                {item.publisher && (
-                    <div class="detail-row">
-                        <span class="detail-label">出版社</span>
-                        <span class="detail-value">{item.publisher}</span>
-                    </div>
-                )}
-                {item.pubYear && (
-                    <div class="detail-row">
-                        <span class="detail-label">刊行年</span>
-                        <span class="detail-value">{item.pubYear}</span>
-                    </div>
-                )}
-                {item.issued && (
-                    <div class="detail-row">
-                        <span class="detail-label">発行日</span>
-                        <span class="detail-value">{item.issued}</span>
-                    </div>
-                )}
-                {item.extent && (
-                    <div class="detail-row">
-                        <span class="detail-label">ページ数</span>
-                        <span class="detail-value">{item.extent}</span>
-                    </div>
-                )}
-                {item.price && (
-                    <div class="detail-row">
-                        <span class="detail-label">価格</span>
-                        <span class="detail-value detail-price">{item.price}</span>
-                    </div>
-                )}
-            </section>
-
-            {/* 分類・識別情報 */}
-            <section class="detail-section">
-                <h4 class="section-title">分類・識別情報</h4>
-                {item.isbn13 && (
-                    <div class="detail-row">
-                        <span class="detail-label">ISBN</span>
-                        <span class="detail-value detail-code">{item.isbn13}</span>
-                    </div>
-                )}
-                {item.ndc10 && (
-                    <div class="detail-row">
-                        <span class="detail-label">NDC10</span>
-                        <span class="detail-value">{item.ndc10}</span>
-                    </div>
-                )}
-                {item.ndlc && (
-                    <div class="detail-row">
-                        <span class="detail-label">NDLC</span>
-                        <span class="detail-value">{item.ndlc}</span>
-                    </div>
-                )}
-                {item.subjects.length > 0 && (
-                    <div class="detail-row">
-                        <span class="detail-label">件名</span>
-                        <span class="detail-value">{item.subjects.join(' / ')}</span>
-                    </div>
-                )}
-                {item.ndlBibId && (
-                    <div class="detail-row detail-secondary">
-                        <span class="detail-label">NDL書誌ID</span>
-                        <span class="detail-value detail-code">{item.ndlBibId}</span>
-                    </div>
-                )}
-                {item.jpno && (
-                    <div class="detail-row detail-secondary">
-                        <span class="detail-label">全国書誌番号</span>
-                        <span class="detail-value detail-code">{item.jpno}</span>
-                    </div>
-                )}
-            </section>
-
-            {/* リンク */}
-            {item.link && (
-                <section class="detail-section">
-                    <a href={item.link} target="_blank" rel="noopener noreferrer" class="ndl-link">
-                        📚 国立国会図書館で見る
-                    </a>
-                </section>
-            )}
-        </div>
-    );
-};
-
 const BookCard: FC<{ book: Book }> = ({ book }) => {
     const isbn13 = convertISBN10to13(book.isbn);
     return (
@@ -257,12 +138,12 @@ const BookCard: FC<{ book: Book }> = ({ book }) => {
                         <span>刊行日: {book.pubdate || '不明'}</span>
                         <span class="isbn">ISBN: {isbn13 || '―'}</span>
                     </div>
-                    {isbn13 && (
-                        <details class="ndl" data-isbn={isbn13}>
-                            <summary>詳細情報を表示</summary>
-                            <div class="ndl-content"></div>
-                        </details>
-                    )}
+                    <div class="ndl-island">
+                        {isbn13 && (
+                            <details class="ndl" data-isbn={isbn13}>
+                            </details>
+                        )}
+                    </div>
                 </div>
                 {isbn13 && (
                     <div class="book-cover">
@@ -320,7 +201,7 @@ const BookListPage: FC<{ books: Book[]; readBooks: Book[]; activeTab?: 'wish' | 
                     <BookList books={readBooks} />
                 </div>
             </main>
-            <script type="module" src="/public/accordion.js"></script>
+            <script type="module" src="/public/accordion.jsx"></script>
             <script type="module" src="/public/cover-loader.js"></script>
         </body>
     </html>
@@ -328,6 +209,8 @@ const BookListPage: FC<{ books: Book[]; readBooks: Book[]; activeTab?: 'wish' | 
 
 // APIエンドポイント: 書籍詳細取得
 app.get('/api/books/:isbn', async (c) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate slight delay for demonstration
+
     const isbn = c.req.param('isbn');
 
     logger.info('NDL Search started', { isbn });
@@ -352,7 +235,7 @@ app.get('/api/books/:isbn', async (c) => {
     };
     logger.info('Book details retrieved', summary);
 
-    return c.html(renderBookDetail(item));
+    return c.json(item);
 });
 
 // ログビューアーエンドポイント
