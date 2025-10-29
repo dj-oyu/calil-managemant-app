@@ -1,90 +1,90 @@
-# Calil Management App
+# Calil 蔵書管理アプリ
 
-A web application for managing library books using the [Calil API](https://calil.jp/). Built with Hono and Bun, this app provides a modern interface for tracking books you want to read and books you've already read.
+[Calil API](https://calil.jp/) を使用した図書館蔵書管理Webアプリケーションです。Hono と Bun で構築されており、読みたい本と読んだ本を追跡するモダンなインターフェースを提供します。
 
-## Features
+## 機能
 
-- 📚 **Book List Management**: Manage "wish to read" and "already read" book lists from Calil
-- 🔍 **NDL Search Integration**: Fetch detailed book information from the National Diet Library (NDL) OpenSearch API
-- 🖼️ **Cover Image Caching**: Automatic caching of book cover images for improved performance
-- 🔐 **Authentication**: Secure authentication using Puppeteer for Calil API access
-- 📊 **Application Logging**: Built-in logging system with web-based log viewer
-- ⚡ **Fast Performance**: Built on Bun runtime for optimal speed
+- 📚 **蔵書リスト管理**: Calil から「読みたい本」「読んだ本」リストを管理
+- 🔍 **NDL検索統合**: 国立国会図書館（NDL）OpenSearch API から詳細な書籍情報を取得
+- 🖼️ **カバー画像キャッシング**: 書籍カバー画像の自動キャッシュによるパフォーマンス向上
+- 🔐 **認証**: Puppeteer を使用した Calil API への安全な認証
+- 📊 **アプリケーションログ**: Web ベースのログビューアーを備えた組み込みログシステム
+- ⚡ **高速パフォーマンス**: Bun ランタイムによる最適な速度
 
-## Tech Stack
+## 技術スタック
 
-- **Runtime**: [Bun](https://bun.sh) - Fast all-in-one JavaScript runtime
-- **Framework**: [Hono](https://hono.dev) - Ultrafast web framework
-- **Automation**: [Puppeteer](https://pptr.dev) - Headless browser for authentication
-- **XML Parsing**: fast-xml-parser for NDL API responses
+- **ランタイム**: [Bun](https://bun.sh) - 高速オールインワン JavaScript ランタイム
+- **フレームワーク**: [Hono](https://hono.dev) - 超高速 Web フレームワーク
+- **自動化**: [Puppeteer](https://pptr.dev) - 認証用ヘッドレスブラウザ
+- **XML パース**: NDL API レスポンス用の fast-xml-parser
 
-## Installation
+## インストール
 
-Install dependencies:
+依存関係をインストール:
 
 ```bash
 bun install
 ```
 
-## Usage
+## 使い方
 
-### Development Mode
+### 開発モード
 
-Run the application with hot reload:
+ホットリロード付きでアプリケーションを実行:
 
 ```bash
 bun run dev
 ```
 
-### Production Mode
+### 本番モード
 
-Run the application:
+アプリケーションを実行:
 
 ```bash
 bun run start
 ```
 
-The server will start at `http://localhost:8787`
+サーバーは `http://localhost:8787` で起動します
 
-### Available Endpoints
+### 利用可能なエンドポイント
 
-- `/` - Main book list interface with tabs for wish and read books
-- `/api/books/:isbn` - Fetch detailed book information from NDL
-- `/api/cover/:isbn` - Get cached book cover image
-- `/log` - View application logs
-- `/auth/*` - Authentication endpoints
+- `/` - 読みたい本と読んだ本のタブを持つメイン書籍リストインターフェース
+- `/api/books/:isbn` - NDL から詳細な書籍情報を取得
+- `/api/cover/:isbn` - キャッシュされた書籍カバー画像を取得
+- `/log` - アプリケーションログを表示
+- `/auth/*` - 認証エンドポイント
 
-### Building Binaries
+### バイナリのビルド
 
-Build standalone executables for different platforms:
+各プラットフォーム用のスタンドアロン実行ファイルをビルド:
 
 ```bash
-# Build for all platforms
+# すべてのプラットフォーム用にビルド
 bun run build:binary
 
-# Build for specific platforms
+# 特定のプラットフォーム用にビルド
 bun run build:binary:linux
 bun run build:binary:windows
 bun run build:binary:mac
 ```
 
-Binaries will be created in the `dist/` directory.
+バイナリは `dist/` ディレクトリに作成されます。
 
-## Project Structure
+## プロジェクト構造
 
 ```
 ├── src/
-│   ├── app/           # Application server and routes
-│   ├── features/      # Feature modules
-│   │   ├── calil/     # Calil API integration
-│   │   ├── ndl/       # NDL search utilities
-│   │   ├── covers/    # Cover image caching
-│   │   └── auth/      # Authentication
-│   └── shared/        # Shared utilities
-├── client/            # Client-side scripts
-└── index.tsx          # Application entry point
+│   ├── app/           # アプリケーションサーバーとルート
+│   ├── features/      # 機能モジュール
+│   │   ├── calil/     # Calil API 統合
+│   │   ├── ndl/       # NDL 検索ユーティリティ
+│   │   ├── covers/    # カバー画像キャッシング
+│   │   └── auth/      # 認証
+│   └── shared/        # 共有ユーティリティ
+├── client/            # クライアントサイドスクリプト
+└── index.tsx          # アプリケーションエントリーポイント
 ```
 
-## License
+## ライセンス
 
-This project is private.
+このプロジェクトはプライベートです。
