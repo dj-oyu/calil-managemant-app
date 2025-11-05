@@ -1,13 +1,55 @@
 import { Hono } from 'hono';
 import { type FC } from 'hono/jsx';
+import { renderToReadableStream, Suspense } from 'hono/jsx/streaming';
+import { raw } from 'hono/html';
 import { serve } from '@hono/node-server';
 import { authRoutes } from './routes/auth.routes';
-import { fetchBookList } from '../features/calil/api/fetch-list';
+import { fetchBookList, fetchBookListMetadata, fetchBookListPage } from '../features/calil/api/fetch-list';
 import { convertISBN10to13, NDLsearch, type NdlItem } from '../features/ndl/utility';
 import { logger } from '../shared/logging/logger';
 import { initCoverCache, getCoverImage } from '../features/covers/server/cache';
 
 const app = new Hono();
+
+// 環境設定
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const isDevelopment = NODE_ENV === 'development';
+
+logger.info('Application starting', {
+    environment: NODE_ENV,
+    isDevelopment,
+    cacheEnabled: !isDevelopment
+});
+
+/**
+ * 環境に応じたキャッシュヘッダーを生成
+ *
+ * @param contentType - Content-Type header value
+ * @param maxAge - Cache max-age in seconds (production only)
+ * @returns Cache headers object
+ *
+ * @remarks
+ * - Development: キャッシュ無効化（即座に変更が反映される）
+ * - Production: 長期キャッシュ（パフォーマンス最適化）
+ */
+function getCacheHeaders(contentType: string, maxAge: number = 31536000): Record<string, string> {
+    if (isDevelopment) {
+        // 開発環境: キャッシュ無効化
+        return {
+            'Content-Type': contentType,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+        };
+    } else {
+        // 本番環境: 長期キャッシュ
+        return {
+            'Content-Type': contentType,
+            'Cache-Control': `public, max-age=${maxAge}, immutable`,
+            'X-Content-Type-Options': 'nosniff',
+        };
+    }
+}
 
 // Initialize cover cache on startup
 await initCoverCache();
@@ -27,10 +69,8 @@ app.get('/public/styles/:filename{.+\\.css$}', async (c) => {
     }
 
     const content = await file.text();
-    return c.text(content, 200, {
-        'Content-Type': 'text/css; charset=utf-8',
-        'Cache-Control': 'public, max-age=3600',
-    });
+    const headers = getCacheHeaders('text/css; charset=utf-8', 86400); // 24時間
+    return c.text(content, 200, headers);
 });
 
 // TypeScriptファイルを動的にトランスパイルして配信
@@ -66,10 +106,8 @@ app.get('/public/:path{.+\\.js$}', async (c) => {
                 size: jsCode.length,
                 outputCount: transpiled.outputs.length
             });
-            return c.text(jsCode, 200, {
-                'Content-Type': 'application/javascript; charset=utf-8',
-                'Cache-Control': 'public, max-age=3600',
-            });
+            const headers = getCacheHeaders('application/javascript; charset=utf-8', 31536000); // 1年
+            return c.text(jsCode, 200, headers);
         }
 
         logger.error('Transpilation failed', {
@@ -246,6 +284,26 @@ const renderBookDetail = (item: NdlItem) => {
     );
 };
 
+// Skeletonカードコンポーネント（ローディング表示用）
+const BookCardSkeleton: FC = () => (
+    <li class="book-card skeleton">
+        <div class="book-content">
+            <div class="book-info">
+                <div class="skeleton-title skeleton-shimmer"></div>
+                <div class="meta">
+                    <div class="skeleton-text skeleton-shimmer"></div>
+                    <div class="skeleton-text skeleton-shimmer"></div>
+                    <div class="skeleton-text skeleton-shimmer"></div>
+                    <div class="skeleton-text skeleton-shimmer"></div>
+                </div>
+            </div>
+            <div class="book-cover">
+                <div class="skeleton-cover skeleton-shimmer"></div>
+            </div>
+        </div>
+    </li>
+);
+
 const BookCard: FC<{ book: Book }> = ({ book }) => {
     const isbn13 = convertISBN10to13(book.isbn);
     return (
@@ -290,12 +348,40 @@ const BookList: FC<{ books: Book[] }> = ({ books }) => (
     </ul>
 );
 
-const BookListPage: FC<{ books: Book[]; readBooks: Book[]; activeTab?: 'wish' | 'read' }> = ({ books, readBooks, activeTab = 'wish' }) => (
+// Skeletonリストコンポーネント（カウントベース）
+const BookListSkeleton: FC<{ count: number }> = ({ count }) => (
+    <ul>
+        {Array.from({ length: count }, (_, i) => (
+            <BookCardSkeleton key={i} />
+        ))}
+    </ul>
+);
+
+// 非同期書籍リストコンポーネント（Suspense対応）
+const AsyncBookList = async ({ listType }: { listType: 'wish' | 'read' }) => {
+    const bookData = await fetchBookList(listType);
+    const books = (typeof bookData === 'string' ? JSON.parse(bookData) : bookData) as Book[];
+
+    logger.info(`Fetched ${listType} books`, { count: books.length });
+
+    return <BookList books={books} />;
+};
+
+// タブカウントを取得する軽量な非同期コンポーネント
+const AsyncTabCount = async ({ listType }: { listType: 'wish' | 'read' }) => {
+    const bookData = await fetchBookList(listType);
+    const books = (typeof bookData === 'string' ? JSON.parse(bookData) : bookData) as Book[];
+    return <>{books.length}</>;
+};
+
+// Suspense対応のストリーミングページコンポーネント（アクティブなタブのみ読み込み）
+const StreamingBookListPage: FC<{ activeTab?: 'wish' | 'read' }> = ({ activeTab = 'wish' }) => (
     <html lang="ja">
         <head>
             <meta charSet="utf-8" />
             <title>Book Lists</title>
             <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <meta name="app-environment" content={NODE_ENV} />
             <meta name="cover-max-concurrent" content="2" />
             <link rel="stylesheet" href="/public/styles/main.css" />
         </head>
@@ -306,20 +392,57 @@ const BookListPage: FC<{ books: Book[]; readBooks: Book[]; activeTab?: 'wish' | 
                 <nav class="tab-nav" data-island="tab-navigation">
                     <a href="/?tab=wish" class={`tab-button ${activeTab === 'wish' ? 'active' : ''}`} aria-selected={activeTab === 'wish' ? 'true' : 'false'}>
                         📖 読みたい本
-                        <span class="tab-count">{books.length}</span>
+                        <span class="tab-count">
+                            <Suspense fallback={<>...</>}>
+                                <AsyncTabCount listType="wish" />
+                            </Suspense>
+                        </span>
                     </a>
                     <a href="/?tab=read" class={`tab-button ${activeTab === 'read' ? 'active' : ''}`} aria-selected={activeTab === 'read' ? 'true' : 'false'}>
                         ✅ 読んだ本
-                        <span class="tab-count">{readBooks.length}</span>
+                        <span class="tab-count">
+                            <Suspense fallback={<>...</>}>
+                                <AsyncTabCount listType="read" />
+                            </Suspense>
+                        </span>
                     </a>
                 </nav>
 
-                <div class={`tab-content ${activeTab === 'wish' ? 'active' : ''}`} aria-hidden={activeTab !== 'wish' ? 'true' : 'false'}>
-                    <BookList books={books} />
+                {/* アクティブなタブのみSuspenseでレンダリング、非アクティブなタブは遅延ロード */}
+                <div
+                    class={`tab-content ${activeTab === 'wish' ? 'active' : ''}`}
+                    aria-hidden={activeTab !== 'wish' ? 'true' : 'false'}
+                    data-list-type="wish"
+                    data-loaded={activeTab === 'wish' ? 'true' : 'false'}
+                >
+                    {activeTab === 'wish' ? (
+                        <Suspense fallback={<BookListSkeleton count={5} />}>
+                            <AsyncBookList listType="wish" />
+                        </Suspense>
+                    ) : (
+                        <div style="padding: 2rem; text-align: center; color: #999;">
+                            <div style="font-size: 2rem; margin-bottom: 1rem;">📚</div>
+                            <div>タブを切り替えて読み込みます...</div>
+                        </div>
+                    )}
                 </div>
 
-                <div class={`tab-content ${activeTab === 'read' ? 'active' : ''}`} aria-hidden={activeTab !== 'read' ? 'true' : 'false'}>
-                    <BookList books={readBooks} />
+                <div
+                    class={`tab-content ${activeTab === 'read' ? 'active' : ''}`}
+                    aria-hidden={activeTab !== 'read' ? 'true' : 'false'}
+                    data-list-type="read"
+                    data-loaded={activeTab === 'read' ? 'true' : 'false'}
+                >
+                    {activeTab === 'read' ? (
+                        <Suspense fallback={<BookListSkeleton count={2} />}>
+                            <AsyncBookList listType="read" />
+                        </Suspense>
+                    ) : (
+                        <div style="padding: 2rem; text-align: center; color: #999;">
+                            <div style="font-size: 2rem; margin-bottom: 1rem;">✅</div>
+                            <div>タブを切り替えて読み込みます...</div>
+                        </div>
+                    )}
                 </div>
             </main>
             <script type="module" src="/public/islands/loader.js"></script>
@@ -327,7 +450,119 @@ const BookListPage: FC<{ books: Book[]; readBooks: Book[]; activeTab?: 'wish' | 
     </html>
 );
 
-// APIエンドポイント: 書籍詳細取得
+// APIエンドポイント: 書籍リスト取得（ページネーション対応ストリーミング版）
+// Query params: maxPages (optional, default: all pages)
+app.get('/api/book-list-stream/:listType', async (c) => {
+    const listType = c.req.param('listType') as 'wish' | 'read';
+    const maxPagesParam = c.req.query('maxPages');
+    const maxPages = maxPagesParam ? parseInt(maxPagesParam, 10) : undefined;
+
+    logger.info('API: book-list-stream request received', { listType, maxPages });
+
+    if (listType !== 'wish' && listType !== 'read') {
+        logger.warn('API: Invalid list type', { listType });
+        return c.json({ error: 'Invalid list type' }, 400);
+    }
+
+    // ストリーミングレスポンスを作成
+    const stream = new ReadableStream({
+        async start(controller) {
+            const encoder = new TextEncoder();
+
+            try {
+                // 1. まずメタデータを取得して送信
+                logger.info('API: Fetching metadata', { listType });
+                const metadata = await fetchBookListMetadata(listType);
+
+                const metaMessage = JSON.stringify({
+                    type: 'meta',
+                    totalCount: metadata.totalCount,
+                    totalPages: metadata.totalPages,
+                    pageSize: metadata.pageSize,
+                }) + '\n';
+                controller.enqueue(encoder.encode(metaMessage));
+                logger.info('API: Sent metadata', { listType, metadata });
+
+                // 2. ページを1つずつストリーミング
+                const pagesToFetch = maxPages ? Math.min(maxPages, metadata.totalPages) : metadata.totalPages;
+
+                for (let page = 1; page <= pagesToFetch; page++) {
+                    logger.info('API: Fetching page', { listType, page, pagesToFetch });
+                    const books = await fetchBookListPage(listType, page);
+
+                    // 各ページのHTMLを個別に送信
+                    const pageHtml = books.map(book => {
+                        const htmlElement = <BookCard book={book} />;
+                        return htmlElement.toString();
+                    }).join('');
+
+                    const pageMessage = JSON.stringify({
+                        type: 'page',
+                        pageNumber: page,
+                        html: pageHtml,
+                    }) + '\n';
+                    controller.enqueue(encoder.encode(pageMessage));
+                    logger.info('API: Sent page', { listType, page, bookCount: books.length });
+                }
+
+                // 3. 完了を通知
+                const doneMessage = JSON.stringify({ type: 'done' }) + '\n';
+                controller.enqueue(encoder.encode(doneMessage));
+                logger.info('API: Stream completed', { listType, pagesSent: pagesToFetch });
+
+                controller.close();
+            } catch (error) {
+                logger.error('API: Streaming error', { listType, error: String(error) });
+                const errorMessage = JSON.stringify({
+                    type: 'error',
+                    value: 'サーバーエラーが発生しました。'
+                }) + '\n';
+                controller.enqueue(encoder.encode(errorMessage));
+                controller.close();
+            }
+        }
+    });
+
+    return new Response(stream, {
+        headers: getCacheHeaders('application/x-ndjson'),
+    });
+});
+
+// APIエンドポイント: 単一ページ取得（無限スクロール用）
+app.get('/api/book-list-page/:listType/:page', async (c) => {
+    const listType = c.req.param('listType') as 'wish' | 'read';
+    const page = parseInt(c.req.param('page'), 10);
+
+    logger.info('API: book-list-page request received', { listType, page });
+
+    if (listType !== 'wish' && listType !== 'read') {
+        logger.warn('API: Invalid list type', { listType });
+        return c.json({ error: 'Invalid list type' }, 400);
+    }
+
+    if (isNaN(page) || page < 1) {
+        logger.warn('API: Invalid page number', { page });
+        return c.json({ error: 'Invalid page number' }, 400);
+    }
+
+    try {
+        logger.info('API: Fetching single page', { listType, page });
+        const books = await fetchBookListPage(listType, page);
+
+        logger.info('API: Page fetched successfully', { listType, page, count: books.length });
+
+        // BookCardコンポーネントをHTMLとして返す
+        const htmlElements = books.map(book => <BookCard book={book} />);
+        const html = htmlElements.map(el => el.toString()).join('');
+
+        return c.html(raw(html));
+    } catch (error) {
+        logger.error('API: Failed to fetch page', { listType, page, error: String(error) });
+        return c.json({ error: 'Failed to fetch page' }, 500);
+    }
+});
+
+// APIエンドポイント: 書籍詳細取得（通常のHTMLレスポンス）
 app.get('/api/books/:isbn', async (c) => {
     const isbn = c.req.param('isbn');
 
@@ -420,19 +655,21 @@ app.post('/log/clear', (c) => {
     return c.json({ success: true });
 });
 
-// リスト取得（Cookieは内部で自動維持）
+// リスト取得（Suspense + Streaming対応）
 app.get('/', async (c) => {
     const tab = (c.req.query('tab') as 'wish' | 'read') || 'wish';
 
-    const [wishBooks, readBooks] = await Promise.all([
-        fetchBookList('wish'),
-        fetchBookList('read')
-    ]);
+    logger.info('Streaming page request', { tab });
 
-    const books = (typeof wishBooks === 'string' ? JSON.parse(wishBooks) : wishBooks) as Book[];
-    const read = (typeof readBooks === 'string' ? JSON.parse(readBooks) : readBooks) as Book[];
+    // renderToReadableStreamを使用してストリーミングレスポンスを生成
+    const stream = renderToReadableStream(<StreamingBookListPage activeTab={tab} />);
 
-    return c.html(<BookListPage books={books} readBooks={read} activeTab={tab} />);
+    return c.body(stream, {
+        headers: {
+            'Content-Type': 'text/html; charset=UTF-8',
+            'Transfer-Encoding': 'chunked',
+        },
+    });
 });
 
 serve({ fetch: app.fetch, port: 8787 });

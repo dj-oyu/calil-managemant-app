@@ -1,4 +1,5 @@
 import { Island } from './base';
+import { logger } from '../shared/logger';
 
 /**
  * BookDetailIsland - Interactive accordion for book details
@@ -73,7 +74,7 @@ export class BookDetailIsland extends Island {
         this.details.addEventListener('toggle', this.handleToggle);
 
         this.markHydrated();
-        console.log('📖 BookDetailIsland hydrated:', this.isbn);
+        logger.info('📖 BookDetailIsland hydrated:', this.isbn);
     }
 
     /**
@@ -118,7 +119,7 @@ export class BookDetailIsland extends Island {
             this.contentDiv.innerHTML = html;
         } catch (error) {
             this.contentDiv.innerHTML = '<div>詳細情報の取得に失敗しました。</div>';
-            console.error('Failed to fetch book details:', error);
+            logger.error('Failed to fetch book details', error, { isbn: this.isbn });
         }
     }
 

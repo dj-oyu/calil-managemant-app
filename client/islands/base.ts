@@ -1,3 +1,5 @@
+import { logger } from '../shared/logger';
+
 /**
  * Base Island class for all interactive components
  *
@@ -72,7 +74,7 @@ export abstract class Island {
      */
     protected checkHydrated(): boolean {
         if (this.isHydrated) {
-            console.warn('Island already hydrated', this.root);
+            logger.warn('Island already hydrated', this.root);
             return true;
         }
         return false;
