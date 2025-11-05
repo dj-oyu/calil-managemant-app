@@ -7,15 +7,42 @@ import { Island } from './base';
  * - Lazy loading: Fetches book details only when accordion is opened
  * - Caching: Loads data only once per ISBN
  * - Progressive enhancement: Works with native <details> element
+ *
+ * @example
+ * HTML structure:
+ * ```html
+ * <details class="ndl" data-island="book-detail" data-isbn="9784123456789">
+ *   <summary>詳細情報を表示</summary>
+ *   <div class="ndl-content"></div>
+ * </details>
+ * ```
  */
 export class BookDetailIsland extends Island {
+    /** The <details> element serving as the accordion */
     private details: HTMLDetailsElement;
+
+    /** ISBN-13 of the book */
     private isbn: string;
+
+    /** The <summary> element containing the toggle text */
     private summary: HTMLElement | null;
+
+    /** The container div where book details will be rendered */
     private contentDiv: HTMLElement | null;
+
+    /** Whether book details have been loaded from the API */
     private loaded = false;
+
+    /** Original summary text before interaction */
     private originalText: string;
 
+    /**
+     * Create a new BookDetailIsland
+     *
+     * @param root - Must be a <details> element with data-isbn attribute
+     * @throws {Error} If root is not a <details> element
+     * @throws {Error} If data-isbn attribute is missing
+     */
     constructor(root: HTMLElement) {
         super(root);
 
@@ -34,6 +61,11 @@ export class BookDetailIsland extends Island {
         }
     }
 
+    /**
+     * Hydrate the island by attaching event listeners
+     *
+     * @returns Promise that resolves when hydration is complete
+     */
     async hydrate(): Promise<void> {
         if (this.checkHydrated()) return;
 
@@ -44,7 +76,13 @@ export class BookDetailIsland extends Island {
         console.log('📖 BookDetailIsland hydrated:', this.isbn);
     }
 
-    private handleToggle = async () => {
+    /**
+     * Handle accordion toggle event
+     * Updates summary text and fetches book details on first open
+     *
+     * @private
+     */
+    private handleToggle = async (): Promise<void> => {
         // Update summary text
         if (this.summary) {
             this.summary.textContent = this.details.open ? '閉じる' : this.originalText;
@@ -57,6 +95,13 @@ export class BookDetailIsland extends Island {
         }
     };
 
+    /**
+     * Fetch book details from the API
+     * Shows loading state and handles errors gracefully
+     *
+     * @private
+     * @returns Promise that resolves when fetch is complete
+     */
     private async fetchBookDetails(): Promise<void> {
         if (!this.contentDiv) return;
 
@@ -77,6 +122,11 @@ export class BookDetailIsland extends Island {
         }
     }
 
+    /**
+     * Cleanup event listeners when island is destroyed
+     *
+     * @override
+     */
     override destroy(): void {
         this.details.removeEventListener('toggle', this.handleToggle);
         super.destroy();

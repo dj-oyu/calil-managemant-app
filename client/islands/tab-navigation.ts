@@ -8,11 +8,31 @@ import { Island } from './base';
  * - History API: Browser back/forward works correctly
  * - Progressive enhancement: Falls back to links if JS fails
  * - Accessibility: Maintains proper ARIA attributes
+ *
+ * @example
+ * HTML structure:
+ * ```html
+ * <nav class="tab-nav" data-island="tab-navigation">
+ *   <a href="/?tab=wish" class="tab-button active">📖 読みたい本</a>
+ *   <a href="/?tab=read" class="tab-button">✅ 読んだ本</a>
+ * </nav>
+ * <div class="tab-content active">...</div>
+ * <div class="tab-content">...</div>
+ * ```
  */
 export class TabNavigationIsland extends Island {
+    /** All tab button elements */
     private tabs: NodeListOf<HTMLAnchorElement>;
+
+    /** All tab content elements */
     private tabContents: NodeListOf<HTMLElement>;
 
+    /**
+     * Create a new TabNavigationIsland
+     *
+     * @param root - The nav element containing tab buttons
+     * @throws {Error} If no .tab-button elements are found
+     */
     constructor(root: HTMLElement) {
         super(root);
 
@@ -24,6 +44,12 @@ export class TabNavigationIsland extends Island {
         }
     }
 
+    /**
+     * Hydrate the island by attaching event listeners
+     * Intercepts tab clicks and handles browser navigation
+     *
+     * @returns Promise that resolves when hydration is complete
+     */
     async hydrate(): Promise<void> {
         if (this.checkHydrated()) return;
 
@@ -39,6 +65,13 @@ export class TabNavigationIsland extends Island {
         console.log('🔖 TabNavigationIsland hydrated');
     }
 
+    /**
+     * Handle tab button click
+     * Prevents default navigation, updates URL with History API, and switches tabs
+     *
+     * @param e - Mouse click event
+     * @private
+     */
     private handleTabClick = (e: MouseEvent): void => {
         e.preventDefault();
 
@@ -53,11 +86,28 @@ export class TabNavigationIsland extends Island {
         this.switchToTab(targetTab as 'wish' | 'read');
     };
 
+    /**
+     * Handle browser back/forward navigation
+     * Switches to the appropriate tab based on history state
+     *
+     * @param e - PopState event from browser navigation
+     * @private
+     */
     private handlePopState = (e: PopStateEvent): void => {
         const targetTab = e.state?.tab || 'wish';
         this.switchToTab(targetTab);
     };
 
+    /**
+     * Switch to the specified tab
+     * Updates CSS classes and ARIA attributes for both tabs and content
+     *
+     * @param targetTab - The tab to switch to ('wish' or 'read')
+     * @private
+     * @remarks
+     * Assumes first content element corresponds to 'wish' tab,
+     * second content element corresponds to 'read' tab
+     */
     private switchToTab(targetTab: 'wish' | 'read'): void {
         // Update tab buttons
         this.tabs.forEach((tab) => {
@@ -88,6 +138,12 @@ export class TabNavigationIsland extends Island {
         });
     }
 
+    /**
+     * Cleanup event listeners when island is destroyed
+     * Removes both tab click listeners and popstate listener
+     *
+     * @override
+     */
     override destroy(): void {
         this.tabs.forEach((tab) => {
             tab.removeEventListener('click', this.handleTabClick);
