@@ -199,7 +199,8 @@ export class TabNavigationIsland extends Island {
     }
 
     /**
-     * Load tab content dynamically from the API
+     * Load tab content dynamically from the API using streaming
+     * First receives count for accurate Skeleton display, then receives HTML
      *
      * @param contentElement - The tab content element to populate
      * @private
@@ -214,14 +215,14 @@ export class TabNavigationIsland extends Island {
             return;
         }
 
-        // Show Skeleton UI as loading state
-        logger.debug('⏳ Showing Skeleton UI for:', listType);
-        const skeletonCount = listType === 'wish' ? 5 : 2;
-        contentElement.innerHTML = this.generateSkeletonHTML(skeletonCount);
+        // Show default Skeleton UI as initial loading state
+        logger.debug('⏳ Showing initial Skeleton UI for:', listType);
+        const defaultSkeletonCount = 3;
+        contentElement.innerHTML = this.generateSkeletonHTML(defaultSkeletonCount);
 
         try {
-            logger.debug(`🌐 Fetching /api/book-list/${listType}`);
-            const response = await fetch(`/api/book-list/${listType}`);
+            logger.debug(`🌐 Fetching /api/book-list-stream/${listType}`);
+            const response = await fetch(`/api/book-list-stream/${listType}`);
 
             logger.debug(`📊 Response status: ${response.status}`);
 
@@ -229,18 +230,61 @@ export class TabNavigationIsland extends Island {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            const html = await response.text();
-            logger.debug(`✅ Received HTML (${html.length} chars)`);
+            // Read streaming NDJSON response
+            const reader = response.body?.getReader();
+            if (!reader) {
+                throw new Error('Response body is not readable');
+            }
 
-            contentElement.innerHTML = html;
-            contentElement.dataset.loaded = 'true';
+            const decoder = new TextDecoder();
+            let buffer = '';
 
-            logger.debug('🏝️ Dispatching island:reload event');
-            // Re-hydrate any islands in the newly loaded content
-            const event = new CustomEvent('island:reload', { detail: { container: contentElement } });
-            document.dispatchEvent(event);
+            while (true) {
+                const { done, value } = await reader.read();
 
-            logger.info('✅ Tab content loaded successfully for:', listType);
+                if (done) {
+                    logger.debug('📥 Stream completed');
+                    break;
+                }
+
+                // Decode chunk and append to buffer
+                buffer += decoder.decode(value, { stream: true });
+
+                // Process complete lines (NDJSON format)
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+
+                    try {
+                        const data = JSON.parse(line);
+                        logger.debug('📦 Received data:', { type: data.type, valueLength: data.value?.toString().length });
+
+                        if (data.type === 'count') {
+                            // Update Skeleton UI with actual count
+                            logger.info(`📊 Received count: ${data.value}`);
+                            contentElement.innerHTML = this.generateSkeletonHTML(data.value);
+                        } else if (data.type === 'html') {
+                            // Replace Skeleton with actual content
+                            logger.debug(`✅ Received HTML (${data.value.length} chars)`);
+                            contentElement.innerHTML = data.value;
+                            contentElement.dataset.loaded = 'true';
+
+                            logger.debug('🏝️ Dispatching island:reload event');
+                            // Re-hydrate any islands in the newly loaded content
+                            const event = new CustomEvent('island:reload', { detail: { container: contentElement } });
+                            document.dispatchEvent(event);
+
+                            logger.info('✅ Tab content loaded successfully for:', listType);
+                        } else if (data.type === 'error') {
+                            throw new Error(data.value);
+                        }
+                    } catch (parseError) {
+                        logger.error('Failed to parse streaming data', parseError, { line });
+                    }
+                }
+            }
         } catch (error) {
             logger.error('Failed to load tab content', error, { listType });
 

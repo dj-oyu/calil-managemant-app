@@ -449,7 +449,59 @@ const StreamingBookListPage: FC<{ activeTab?: 'wish' | 'read' }> = ({ activeTab 
     </html>
 );
 
-// APIエンドポイント: 書籍リスト取得（タブ切り替え用）
+// APIエンドポイント: 書籍リスト取得（ストリーミング版 - まず件数、次にHTML）
+app.get('/api/book-list-stream/:listType', async (c) => {
+    const listType = c.req.param('listType') as 'wish' | 'read';
+
+    logger.info('API: book-list-stream request received', { listType });
+
+    if (listType !== 'wish' && listType !== 'read') {
+        logger.warn('API: Invalid list type', { listType });
+        return c.json({ error: 'Invalid list type' }, 400);
+    }
+
+    // ストリーミングレスポンスを作成
+    const stream = new ReadableStream({
+        async start(controller) {
+            const encoder = new TextEncoder();
+
+            try {
+                logger.info('API: Fetching book list for streaming', { listType });
+
+                const bookData = await fetchBookList(listType);
+                const books = (typeof bookData === 'string' ? JSON.parse(bookData) : bookData) as Book[];
+
+                // 1. まず件数を送信（Skeleton表示用）
+                const countMessage = JSON.stringify({ type: 'count', value: books.length }) + '\n';
+                controller.enqueue(encoder.encode(countMessage));
+                logger.info('API: Sent count', { listType, count: books.length });
+
+                // 2. 次にHTMLを送信
+                const htmlElement = <BookList books={books} />;
+                const html = htmlElement.toString();
+                const htmlMessage = JSON.stringify({ type: 'html', value: html }) + '\n';
+                controller.enqueue(encoder.encode(htmlMessage));
+                logger.info('API: Sent HTML', { listType });
+
+                controller.close();
+            } catch (error) {
+                logger.error('API: Streaming error', { listType, error: String(error) });
+                const errorMessage = JSON.stringify({
+                    type: 'error',
+                    value: 'サーバーエラーが発生しました。'
+                }) + '\n';
+                controller.enqueue(encoder.encode(errorMessage));
+                controller.close();
+            }
+        }
+    });
+
+    return new Response(stream, {
+        headers: getCacheHeaders('application/x-ndjson'),
+    });
+});
+
+// APIエンドポイント: 書籍リスト取得（タブ切り替え用 - 後方互換性のため残す）
 app.get('/api/book-list/:listType', async (c) => {
     const listType = c.req.param('listType') as 'wish' | 'read';
 
