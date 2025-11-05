@@ -2,8 +2,6 @@ name: Release Build
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*.*.*'
 
@@ -19,20 +17,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Extract version
+      - name: Extract version from tag
         id: version
         run: |
-          # If triggered by a tag, extract version from tag (v1.0.0 -> 1.0.0)
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "tag_version=$VERSION" >> $GITHUB_OUTPUT
-          else
-            # Otherwise, use version from package.json
-            VERSION=$(cat package.json | grep '"version"' | head -1 | sed 's/.*: "\(.*\)".*/\1/')
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "tag_version=" >> $GITHUB_OUTPUT
-          fi
+          # Extract version from tag (v1.0.0 -> 1.0.0)
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION"
 
       - name: Setup Bun
