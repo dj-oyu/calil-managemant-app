@@ -2,6 +2,7 @@ import { Island } from './base';
 import { BookDetailIsland } from './book-detail';
 import { CoverImageIsland } from './cover-image';
 import { TabNavigationIsland } from './tab-navigation';
+import { logger } from '../shared/logger';
 
 /**
  * Valid island type identifiers that can be used in data-island attribute
@@ -90,11 +91,11 @@ export class IslandLoader {
      */
     async init(): Promise<void> {
         if (this.isInitialized) {
-            console.warn('IslandLoader already initialized');
+            logger.warn('IslandLoader already initialized');
             return;
         }
 
-        console.log('🏝️ Island Architecture: Initializing...');
+        logger.info('🏝️ Island Architecture: Initializing...');
 
         // Initialize CoverImageIsland observer
         const maxConcurrent = this.getMaxConcurrentFromMeta();
@@ -103,7 +104,7 @@ export class IslandLoader {
         // Find and hydrate all islands
         const islandElements = document.querySelectorAll<HTMLElement>('[data-island]');
 
-        console.log(`🏝️ Found ${islandElements.length} islands to hydrate`);
+        logger.info(`🏝️ Found ${islandElements.length} islands to hydrate`);
 
         const hydrationPromises = Array.from(islandElements).map((element) =>
             this.hydrateIsland(element)
@@ -113,8 +114,8 @@ export class IslandLoader {
 
         this.isInitialized = true;
 
-        console.log(`🏝️ Island Architecture: Hydrated ${this.islands.length} islands`);
-        console.log('🏝️ Active islands:', this.getStats());
+        logger.info(`🏝️ Island Architecture: Hydrated ${this.islands.length} islands`);
+        logger.debug('🏝️ Active islands:', this.getStats());
     }
 
     /**
@@ -136,14 +137,14 @@ export class IslandLoader {
         const islandType = element.dataset.island as IslandType;
 
         if (!islandType) {
-            console.error('Island missing data-island attribute', element);
+            logger.error('Island missing data-island attribute', element);
             return;
         }
 
         const IslandClass = ISLAND_REGISTRY[islandType];
 
         if (!IslandClass) {
-            console.error(`Unknown island type: ${islandType}`, element);
+            logger.error(`Unknown island type: ${islandType}`, element);
             return;
         }
 
@@ -152,7 +153,7 @@ export class IslandLoader {
             await island.hydrate();
             this.islands.push(island);
         } catch (error) {
-            console.error(`Failed to hydrate island: ${islandType}`, error, element);
+            logger.error(`Failed to hydrate island: ${islandType}`, error, { element });
         }
     }
 
@@ -181,20 +182,20 @@ export class IslandLoader {
      * specified container.
      */
     async reloadIslands(container: HTMLElement): Promise<void> {
-        console.log('🏝️ [reloadIslands] Starting reload for container:', container);
+        logger.debug('🏝️ [reloadIslands] Starting reload for container:', container);
 
         const islandElements = container.querySelectorAll<HTMLElement>('[data-island]');
 
-        console.log(`🏝️ [reloadIslands] Found ${islandElements.length} islands to hydrate`);
+        logger.debug(`🏝️ [reloadIslands] Found ${islandElements.length} islands to hydrate`);
 
         if (islandElements.length === 0) {
-            console.log('🏝️ [reloadIslands] No islands found in container');
+            logger.debug('🏝️ [reloadIslands] No islands found in container');
             return;
         }
 
         // Log each island type found
         islandElements.forEach((element, index) => {
-            console.log(`🏝️ [reloadIslands] Island ${index + 1}: type="${element.dataset.island}"`);
+            logger.debug(`🏝️ [reloadIslands] Island ${index + 1}: type="${element.dataset.island}"`);
         });
 
         const hydrationPromises = Array.from(islandElements).map((element) =>
@@ -207,7 +208,11 @@ export class IslandLoader {
         const successful = results.filter(r => r.status === 'fulfilled').length;
         const failed = results.filter(r => r.status === 'rejected').length;
 
-        console.log(`🏝️ [reloadIslands] Complete: ${successful} succeeded, ${failed} failed`);
+        logger.info(`🏝️ [reloadIslands] Complete: ${successful} succeeded, ${failed} failed`);
+
+        if (failed > 0) {
+            logger.warn(`🏝️ [reloadIslands] ${failed} island(s) failed to hydrate`);
+        }
     }
 
     /**
@@ -284,13 +289,13 @@ if (typeof window !== 'undefined') {
 
     // Listen for island reload events (e.g., from dynamic content loading)
     document.addEventListener('island:reload', async (event: Event) => {
-        console.log('🏝️ [Event] island:reload event received');
+        logger.debug('🏝️ [Event] island:reload event received');
         const customEvent = event as CustomEvent<{ container: HTMLElement }>;
         if (customEvent.detail?.container) {
-            console.log('🏝️ [Event] Container found, calling reloadIslands');
+            logger.debug('🏝️ [Event] Container found, calling reloadIslands');
             await loader.reloadIslands(customEvent.detail.container);
         } else {
-            console.warn('🏝️ [Event] No container in event detail');
+            logger.warn('🏝️ [Event] No container in event detail');
         }
     });
 }

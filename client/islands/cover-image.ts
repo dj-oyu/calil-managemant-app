@@ -1,4 +1,5 @@
 import { Island } from './base';
+import { logger } from '../shared/logger';
 
 /**
  * CoverImageIsland - Lazy loading cover image component
@@ -122,7 +123,7 @@ export class CoverImageIsland extends Island {
         }
 
         this.markHydrated();
-        console.log('📷 CoverImageIsland hydrated:', this.isbn);
+        logger.info('📷 CoverImageIsland hydrated:', this.isbn);
     }
 
     /**
@@ -194,7 +195,7 @@ export class CoverImageIsland extends Island {
                 this.handleError();
             }
         } catch (error) {
-            console.error(`Failed to load cover ${this.isbn}:`, error);
+            logger.error(`Failed to load cover for ISBN ${this.isbn}`, error);
             this.handleError();
         } finally {
             CoverImageIsland.activeRequests--;

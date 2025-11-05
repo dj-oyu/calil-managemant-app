@@ -380,6 +380,7 @@ const StreamingBookListPage: FC<{ activeTab?: 'wish' | 'read' }> = ({ activeTab 
             <meta charSet="utf-8" />
             <title>Book Lists</title>
             <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <meta name="app-environment" content={NODE_ENV} />
             <meta name="cover-max-concurrent" content="2" />
             <link rel="stylesheet" href="/public/styles/main.css" />
         </head>

@@ -1,4 +1,5 @@
 import { Island } from './base';
+import { logger } from '../shared/logger';
 
 /**
  * TabNavigationIsland - Client-side tab navigation
@@ -53,13 +54,13 @@ export class TabNavigationIsland extends Island {
     async hydrate(): Promise<void> {
         if (this.checkHydrated()) return;
 
-        console.log('🔖 [Hydrate] Starting TabNavigationIsland hydration');
-        console.log('🔖 [Hydrate] Found', this.tabs.length, 'tab buttons');
-        console.log('🔖 [Hydrate] Found', this.tabContents.length, 'tab contents');
+        logger.debug('🔖 [Hydrate] Starting TabNavigationIsland hydration');
+        logger.debug('🔖 [Hydrate] Found', this.tabs.length, 'tab buttons');
+        logger.debug('🔖 [Hydrate] Found', this.tabContents.length, 'tab contents');
 
         // Log tab content details
         this.tabContents.forEach((content, index) => {
-            console.log(`🔖 [Hydrate] Tab content ${index}:`, {
+            logger.debug(`🔖 [Hydrate] Tab content ${index}:`, {
                 listType: content.dataset.listType,
                 loaded: content.dataset.loaded,
                 active: content.classList.contains('active')
@@ -75,7 +76,7 @@ export class TabNavigationIsland extends Island {
         window.addEventListener('popstate', this.handlePopState);
 
         this.markHydrated();
-        console.log('🔖 [Hydrate] TabNavigationIsland hydrated successfully');
+        logger.info('🔖 TabNavigationIsland hydrated');
     }
 
     /**
@@ -123,7 +124,7 @@ export class TabNavigationIsland extends Island {
      * avoiding index-based assumptions
      */
     private async switchToTab(targetTab: 'wish' | 'read'): Promise<void> {
-        console.log('🔖 Switching to tab:', targetTab);
+        logger.info('🔖 Switching to tab:', targetTab);
 
         // Update tab buttons
         this.tabs.forEach((tab) => {
@@ -144,7 +145,7 @@ export class TabNavigationIsland extends Island {
             const listType = content.dataset.listType;
             const isActive = listType === targetTab;
 
-            console.log(`🔖 Tab content [${listType}]: active=${isActive}, loaded=${content.dataset.loaded}`);
+            logger.debug(`🔖 Tab content [${listType}]: active=${isActive}, loaded=${content.dataset.loaded}`);
 
             if (isActive) {
                 content.classList.add('active');
@@ -153,11 +154,11 @@ export class TabNavigationIsland extends Island {
                 // Load content if not yet loaded
                 const loaded = content.dataset.loaded === 'true';
                 if (!loaded) {
-                    console.log(`🔖 Loading content for: ${listType}`);
+                    logger.info(`🔖 Loading content for: ${listType}`);
                     // Note: Not awaiting here to allow UI to update immediately
                     // Content will load in background
                     this.loadTabContent(content).catch(err => {
-                        console.error('Failed to load tab content:', err);
+                        logger.error('Failed to load tab content', err);
                     });
                 }
             } else {
@@ -206,42 +207,42 @@ export class TabNavigationIsland extends Island {
     private async loadTabContent(contentElement: HTMLElement): Promise<void> {
         const listType = contentElement.dataset.listType;
 
-        console.log('📥 loadTabContent called for:', listType);
+        logger.debug('📥 loadTabContent called for:', listType);
 
         if (!listType || (listType !== 'wish' && listType !== 'read')) {
-            console.error('❌ Invalid list type:', listType);
+            logger.error('Invalid list type:', listType);
             return;
         }
 
         // Show Skeleton UI as loading state
-        console.log('⏳ Showing Skeleton UI for:', listType);
+        logger.debug('⏳ Showing Skeleton UI for:', listType);
         const skeletonCount = listType === 'wish' ? 5 : 2;
         contentElement.innerHTML = this.generateSkeletonHTML(skeletonCount);
 
         try {
-            console.log(`🌐 Fetching /api/book-list/${listType}`);
+            logger.debug(`🌐 Fetching /api/book-list/${listType}`);
             const response = await fetch(`/api/book-list/${listType}`);
 
-            console.log(`📊 Response status: ${response.status}`);
+            logger.debug(`📊 Response status: ${response.status}`);
 
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
             const html = await response.text();
-            console.log(`✅ Received HTML (${html.length} chars)`);
+            logger.debug(`✅ Received HTML (${html.length} chars)`);
 
             contentElement.innerHTML = html;
             contentElement.dataset.loaded = 'true';
 
-            console.log('🏝️ Dispatching island:reload event');
+            logger.debug('🏝️ Dispatching island:reload event');
             // Re-hydrate any islands in the newly loaded content
             const event = new CustomEvent('island:reload', { detail: { container: contentElement } });
             document.dispatchEvent(event);
 
-            console.log('✅ Tab content loaded successfully for:', listType);
+            logger.info('✅ Tab content loaded successfully for:', listType);
         } catch (error) {
-            console.error('❌ Failed to load tab content:', error);
+            logger.error('Failed to load tab content', error, { listType });
 
             // Show error with retry option
             const errorMessage = error instanceof Error ? error.message : String(error);
