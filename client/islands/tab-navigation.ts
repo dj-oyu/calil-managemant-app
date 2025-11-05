@@ -21,12 +21,32 @@ import { logger } from '../shared/logger';
  * <div class="tab-content">...</div>
  * ```
  */
+/**
+ * Metadata for paginated list
+ */
+interface ListMetadata {
+    totalCount: number;
+    totalPages: number;
+    pageSize: number;
+    loadedPages: Set<number>;
+    isLoading: boolean;
+}
+
 export class TabNavigationIsland extends Island {
     /** All tab button elements */
     private tabs: NodeListOf<HTMLAnchorElement>;
 
     /** All tab content elements */
     private tabContents: NodeListOf<HTMLElement>;
+
+    /** Metadata for each list type */
+    private metadata: Map<string, ListMetadata> = new Map();
+
+    /** IntersectionObserver for infinite scroll */
+    private scrollObserver: IntersectionObserver | null = null;
+
+    /** Maximum pages to fetch on initial load */
+    private readonly INITIAL_MAX_PAGES = 2;
 
     /**
      * Create a new TabNavigationIsland
@@ -43,6 +63,9 @@ export class TabNavigationIsland extends Island {
         if (this.tabs.length === 0) {
             throw new Error('TabNavigationIsland requires .tab-button elements');
         }
+
+        // Initialize scroll observer
+        this.initScrollObserver();
     }
 
     /**
@@ -199,8 +222,60 @@ export class TabNavigationIsland extends Island {
     }
 
     /**
-     * Load tab content dynamically from the API using streaming
-     * First receives count for accurate Skeleton display, then receives HTML
+     * Initialize IntersectionObserver for infinite scroll
+     * @private
+     */
+    private initScrollObserver(): void {
+        this.scrollObserver = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        const sentinel = entry.target as HTMLElement;
+                        const listType = sentinel.dataset.listType;
+                        if (listType) {
+                            logger.debug('📜 Scroll sentinel visible, loading more:', listType);
+                            this.loadMorePages(listType as 'wish' | 'read');
+                        }
+                    }
+                });
+            },
+            {
+                rootMargin: '200px', // Start loading 200px before reaching the sentinel
+                threshold: 0.1,
+            }
+        );
+    }
+
+    /**
+     * Create a scroll sentinel element for infinite scroll
+     * @private
+     */
+    private createScrollSentinel(listType: string): HTMLElement {
+        const sentinel = document.createElement('div');
+        sentinel.className = 'scroll-sentinel';
+        sentinel.dataset.listType = listType;
+        sentinel.style.cssText = 'height: 1px; margin: 2rem 0;';
+        return sentinel;
+    }
+
+    /**
+     * Create a loading indicator element
+     * @private
+     */
+    private createLoadingIndicator(): HTMLElement {
+        const indicator = document.createElement('div');
+        indicator.className = 'loading-indicator';
+        indicator.style.cssText = 'padding: 2rem; text-align: center; color: #666;';
+        indicator.innerHTML = `
+            <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⏳</div>
+            <div>読み込み中...</div>
+        `;
+        return indicator;
+    }
+
+    /**
+     * Load tab content dynamically from the API using paginated streaming
+     * Receives: meta (with totalPages), then pages one by one
      *
      * @param contentElement - The tab content element to populate
      * @private
@@ -217,12 +292,12 @@ export class TabNavigationIsland extends Island {
 
         // Show default Skeleton UI as initial loading state
         logger.debug('⏳ Showing initial Skeleton UI for:', listType);
-        const defaultSkeletonCount = 3;
+        const defaultSkeletonCount = 10;
         contentElement.innerHTML = this.generateSkeletonHTML(defaultSkeletonCount);
 
         try {
-            logger.debug(`🌐 Fetching /api/book-list-stream/${listType}`);
-            const response = await fetch(`/api/book-list-stream/${listType}`);
+            logger.debug(`🌐 Fetching /api/book-list-stream/${listType}?maxPages=${this.INITIAL_MAX_PAGES}`);
+            const response = await fetch(`/api/book-list-stream/${listType}?maxPages=${this.INITIAL_MAX_PAGES}`);
 
             logger.debug(`📊 Response status: ${response.status}`);
 
@@ -238,6 +313,7 @@ export class TabNavigationIsland extends Island {
 
             const decoder = new TextDecoder();
             let buffer = '';
+            let ulElement: HTMLUListElement | null = null;
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -259,24 +335,71 @@ export class TabNavigationIsland extends Island {
 
                     try {
                         const data = JSON.parse(line);
-                        logger.debug('📦 Received data:', { type: data.type, valueLength: data.value?.toString().length });
+                        logger.debug('📦 Received data:', { type: data.type });
 
-                        if (data.type === 'count') {
-                            // Update Skeleton UI with actual count
-                            logger.info(`📊 Received count: ${data.value}`);
-                            contentElement.innerHTML = this.generateSkeletonHTML(data.value);
-                        } else if (data.type === 'html') {
+                        if (data.type === 'meta') {
+                            // Store metadata
+                            this.metadata.set(listType, {
+                                totalCount: data.totalCount,
+                                totalPages: data.totalPages,
+                                pageSize: data.pageSize,
+                                loadedPages: new Set(),
+                                isLoading: false,
+                            });
+                            logger.info(`📊 Received metadata:`, data);
+
+                            // Update Skeleton count based on initial pages
+                            const initialItemCount = Math.min(this.INITIAL_MAX_PAGES * data.pageSize, data.totalCount);
+                            contentElement.innerHTML = this.generateSkeletonHTML(initialItemCount);
+
+                            // Create UL element for books
+                            ulElement = document.createElement('ul');
+                        } else if (data.type === 'page') {
+                            // Append page HTML to UL
+                            if (ulElement) {
+                                const tempDiv = document.createElement('div');
+                                tempDiv.innerHTML = data.html;
+                                Array.from(tempDiv.children).forEach(child => {
+                                    ulElement!.appendChild(child);
+                                });
+
+                                // Update loaded pages
+                                const meta = this.metadata.get(listType);
+                                if (meta) {
+                                    meta.loadedPages.add(data.pageNumber);
+                                }
+
+                                logger.info(`📄 Loaded page ${data.pageNumber}`);
+                            }
+                        } else if (data.type === 'done') {
                             // Replace Skeleton with actual content
-                            logger.debug(`✅ Received HTML (${data.value.length} chars)`);
-                            contentElement.innerHTML = data.value;
-                            contentElement.dataset.loaded = 'true';
+                            if (ulElement) {
+                                contentElement.innerHTML = '';
+                                contentElement.appendChild(ulElement);
 
-                            logger.debug('🏝️ Dispatching island:reload event');
-                            // Re-hydrate any islands in the newly loaded content
-                            const event = new CustomEvent('island:reload', { detail: { container: contentElement } });
-                            document.dispatchEvent(event);
+                                // Add scroll sentinel if there are more pages
+                                const meta = this.metadata.get(listType);
+                                if (meta && meta.loadedPages.size < meta.totalPages) {
+                                    const sentinel = this.createScrollSentinel(listType);
+                                    contentElement.appendChild(sentinel);
 
-                            logger.info('✅ Tab content loaded successfully for:', listType);
+                                    // Start observing
+                                    if (this.scrollObserver) {
+                                        this.scrollObserver.observe(sentinel);
+                                    }
+
+                                    logger.info(`📜 Scroll sentinel added (${meta.loadedPages.size}/${meta.totalPages} pages loaded)`);
+                                }
+
+                                contentElement.dataset.loaded = 'true';
+
+                                logger.debug('🏝️ Dispatching island:reload event');
+                                // Re-hydrate any islands in the newly loaded content
+                                const event = new CustomEvent('island:reload', { detail: { container: contentElement } });
+                                document.dispatchEvent(event);
+
+                                logger.info('✅ Tab content loaded successfully for:', listType);
+                            }
                         } else if (data.type === 'error') {
                             throw new Error(data.value);
                         }
@@ -316,8 +439,127 @@ export class TabNavigationIsland extends Island {
     }
 
     /**
+     * Load more pages when scrolling (infinite scroll)
+     * @private
+     */
+    private async loadMorePages(listType: 'wish' | 'read'): Promise<void> {
+        const meta = this.metadata.get(listType);
+        if (!meta) {
+            logger.warn('No metadata found for:', listType);
+            return;
+        }
+
+        // Check if already loading or all pages loaded
+        if (meta.isLoading || meta.loadedPages.size >= meta.totalPages) {
+            logger.debug('Already loading or all pages loaded:', { listType, loaded: meta.loadedPages.size, total: meta.totalPages });
+            return;
+        }
+
+        // Find next page to load
+        const nextPage = meta.loadedPages.size + 1;
+        if (nextPage > meta.totalPages) {
+            logger.debug('No more pages to load');
+            return;
+        }
+
+        meta.isLoading = true;
+        logger.info(`📥 Loading page ${nextPage}/${meta.totalPages} for ${listType}`);
+
+        // Find content element and UL
+        const contentElement = document.querySelector<HTMLElement>(`.tab-content[data-list-type="${listType}"]`);
+        if (!contentElement) {
+            logger.error('Content element not found');
+            meta.isLoading = false;
+            return;
+        }
+
+        const ulElement = contentElement.querySelector('ul');
+        if (!ulElement) {
+            logger.error('UL element not found');
+            meta.isLoading = false;
+            return;
+        }
+
+        // Remove sentinel temporarily and add loading indicator
+        const sentinel = contentElement.querySelector('.scroll-sentinel');
+        const loadingIndicator = this.createLoadingIndicator();
+        if (sentinel) {
+            sentinel.replaceWith(loadingIndicator);
+        }
+
+        try {
+            const response = await fetch(`/api/book-list-page/${listType}/${nextPage}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const html = await response.text();
+
+            // Append new items to UL
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            Array.from(tempDiv.children).forEach(child => {
+                ulElement.appendChild(child);
+            });
+
+            // Update metadata
+            meta.loadedPages.add(nextPage);
+            logger.info(`✅ Page ${nextPage} loaded successfully`);
+
+            // Re-hydrate islands in new content
+            const event = new CustomEvent('island:reload', { detail: { container: ulElement } });
+            document.dispatchEvent(event);
+
+            // Remove loading indicator and restore sentinel if more pages exist
+            loadingIndicator.remove();
+            if (meta.loadedPages.size < meta.totalPages) {
+                const newSentinel = this.createScrollSentinel(listType);
+                contentElement.appendChild(newSentinel);
+                if (this.scrollObserver) {
+                    this.scrollObserver.observe(newSentinel);
+                }
+            } else {
+                // All pages loaded - show completion message
+                const completionMessage = document.createElement('div');
+                completionMessage.style.cssText = 'padding: 2rem; text-align: center; color: #666;';
+                completionMessage.innerHTML = `
+                    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">✅</div>
+                    <div>すべての本を読み込みました (${meta.totalCount}件)</div>
+                `;
+                contentElement.appendChild(completionMessage);
+            }
+        } catch (error) {
+            logger.error('Failed to load more pages', error, { listType, page: nextPage });
+
+            // Show error message
+            loadingIndicator.innerHTML = `
+                <div style="color: #cc0000;">
+                    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⚠️</div>
+                    <div>読み込みに失敗しました</div>
+                    <button
+                        onclick="location.reload()"
+                        style="
+                            margin-top: 1rem;
+                            padding: 0.5rem 1rem;
+                            background: #0969da;
+                            color: white;
+                            border: none;
+                            border-radius: 6px;
+                            cursor: pointer;
+                        "
+                    >
+                        🔄 再読み込み
+                    </button>
+                </div>
+            `;
+        } finally {
+            meta.isLoading = false;
+        }
+    }
+
+    /**
      * Cleanup event listeners when island is destroyed
-     * Removes both tab click listeners and popstate listener
+     * Removes both tab click listeners, popstate listener, and scroll observer
      *
      * @override
      */
@@ -327,6 +569,12 @@ export class TabNavigationIsland extends Island {
         });
 
         window.removeEventListener('popstate', this.handlePopState);
+
+        // Disconnect scroll observer
+        if (this.scrollObserver) {
+            this.scrollObserver.disconnect();
+            this.scrollObserver = null;
+        }
 
         super.destroy();
     }

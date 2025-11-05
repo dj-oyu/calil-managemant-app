@@ -103,7 +103,10 @@ async function fetchBookPage({ cookie, yomitaiToken, listType, page }: FetchList
     return data.books;
 }
 
-export async function fetchBookList(listType: ListType): Promise<BookElement[]> {
+/**
+ * Get metadata about the book list (total count, total pages)
+ */
+export async function fetchBookListMetadata(listType: ListType): Promise<{ totalCount: number; totalPages: number; pageSize: number }> {
     let v = await loadCookies();
     if (!v || !(await isValidSession(v))) {
         v = await ensureSession();
@@ -122,13 +125,53 @@ export async function fetchBookList(listType: ListType): Promise<BookElement[]> 
         }
     }
 
-    const totalCount = await fetchTotalCount({ cookie: v.cookies[0]!, yomitaiToken , listType});
+    const totalCount = await fetchTotalCount({ cookie: v.cookies[0]!, yomitaiToken, listType });
     const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
+    return { totalCount, totalPages, pageSize: ITEMS_PER_PAGE };
+}
+
+/**
+ * Fetch a single page of books
+ */
+export async function fetchBookListPage(listType: ListType, page: number): Promise<BookElement[]> {
+    let v = await loadCookies();
+    if (!v || !(await isValidSession(v))) {
+        v = await ensureSession();
+    }
+
+    let yomitaiToken: YomitaiTokenResponse;
+    try {
+        yomitaiToken = await fetchYomitaiToken(v.cookies[0]!);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('Unauthorized')) {
+            v = await ensureSession();
+            yomitaiToken = await fetchYomitaiToken(v.cookies[0]!);
+        } else {
+            throw error;
+        }
+    }
+
+    return await fetchBookPage({ cookie: v.cookies[0]!, yomitaiToken, listType, page });
+}
+
+/**
+ * Fetch multiple pages of books
+ */
+export async function fetchBookListPages(listType: ListType, startPage: number, endPage: number): Promise<BookElement[]> {
     const allBooks: BookElement[] = [];
-    for (let page = 1; page <= totalPages; page++) {
-        const books = await fetchBookPage({ cookie: v.cookies[0]!, yomitaiToken, listType, page });
+    for (let page = startPage; page <= endPage; page++) {
+        const books = await fetchBookListPage(listType, page);
         allBooks.push(...books);
     }
     return allBooks;
+}
+
+/**
+ * Fetch all books (legacy function for backward compatibility)
+ */
+export async function fetchBookList(listType: ListType): Promise<BookElement[]> {
+    const metadata = await fetchBookListMetadata(listType);
+    return await fetchBookListPages(listType, 1, metadata.totalPages);
 }

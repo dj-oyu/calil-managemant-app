@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
-import { type FC } from 'hono/jsx';
+import { type FC, raw } from 'hono/jsx';
 import { renderToReadableStream, Suspense } from 'hono/jsx/streaming';
 import { serve } from '@hono/node-server';
 import { authRoutes } from './routes/auth.routes';
-import { fetchBookList } from '../features/calil/api/fetch-list';
+import { fetchBookList, fetchBookListMetadata, fetchBookListPages, fetchBookListPage } from '../features/calil/api/fetch-list';
 import { convertISBN10to13, NDLsearch, type NdlItem } from '../features/ndl/utility';
 import { logger } from '../shared/logging/logger';
 import { initCoverCache, getCoverImage } from '../features/covers/server/cache';
@@ -449,11 +449,14 @@ const StreamingBookListPage: FC<{ activeTab?: 'wish' | 'read' }> = ({ activeTab 
     </html>
 );
 
-// APIエンドポイント: 書籍リスト取得（ストリーミング版 - まず件数、次にHTML）
+// APIエンドポイント: 書籍リスト取得（ページネーション対応ストリーミング版）
+// Query params: maxPages (optional, default: all pages)
 app.get('/api/book-list-stream/:listType', async (c) => {
     const listType = c.req.param('listType') as 'wish' | 'read';
+    const maxPagesParam = c.req.query('maxPages');
+    const maxPages = maxPagesParam ? parseInt(maxPagesParam, 10) : undefined;
 
-    logger.info('API: book-list-stream request received', { listType });
+    logger.info('API: book-list-stream request received', { listType, maxPages });
 
     if (listType !== 'wish' && listType !== 'read') {
         logger.warn('API: Invalid list type', { listType });
@@ -466,22 +469,45 @@ app.get('/api/book-list-stream/:listType', async (c) => {
             const encoder = new TextEncoder();
 
             try {
-                logger.info('API: Fetching book list for streaming', { listType });
+                // 1. まずメタデータを取得して送信
+                logger.info('API: Fetching metadata', { listType });
+                const metadata = await fetchBookListMetadata(listType);
 
-                const bookData = await fetchBookList(listType);
-                const books = (typeof bookData === 'string' ? JSON.parse(bookData) : bookData) as Book[];
+                const metaMessage = JSON.stringify({
+                    type: 'meta',
+                    totalCount: metadata.totalCount,
+                    totalPages: metadata.totalPages,
+                    pageSize: metadata.pageSize,
+                }) + '\n';
+                controller.enqueue(encoder.encode(metaMessage));
+                logger.info('API: Sent metadata', { listType, metadata });
 
-                // 1. まず件数を送信（Skeleton表示用）
-                const countMessage = JSON.stringify({ type: 'count', value: books.length }) + '\n';
-                controller.enqueue(encoder.encode(countMessage));
-                logger.info('API: Sent count', { listType, count: books.length });
+                // 2. ページを1つずつストリーミング
+                const pagesToFetch = maxPages ? Math.min(maxPages, metadata.totalPages) : metadata.totalPages;
 
-                // 2. 次にHTMLを送信
-                const htmlElement = <BookList books={books} />;
-                const html = htmlElement.toString();
-                const htmlMessage = JSON.stringify({ type: 'html', value: html }) + '\n';
-                controller.enqueue(encoder.encode(htmlMessage));
-                logger.info('API: Sent HTML', { listType });
+                for (let page = 1; page <= pagesToFetch; page++) {
+                    logger.info('API: Fetching page', { listType, page, pagesToFetch });
+                    const books = await fetchBookListPage(listType, page);
+
+                    // 各ページのHTMLを個別に送信
+                    const pageHtml = books.map(book => {
+                        const htmlElement = <BookCard book={book} />;
+                        return htmlElement.toString();
+                    }).join('');
+
+                    const pageMessage = JSON.stringify({
+                        type: 'page',
+                        pageNumber: page,
+                        html: pageHtml,
+                    }) + '\n';
+                    controller.enqueue(encoder.encode(pageMessage));
+                    logger.info('API: Sent page', { listType, page, bookCount: books.length });
+                }
+
+                // 3. 完了を通知
+                const doneMessage = JSON.stringify({ type: 'done' }) + '\n';
+                controller.enqueue(encoder.encode(doneMessage));
+                logger.info('API: Stream completed', { listType, pagesSent: pagesToFetch });
 
                 controller.close();
             } catch (error) {
@@ -499,6 +525,40 @@ app.get('/api/book-list-stream/:listType', async (c) => {
     return new Response(stream, {
         headers: getCacheHeaders('application/x-ndjson'),
     });
+});
+
+// APIエンドポイント: 単一ページ取得（無限スクロール用）
+app.get('/api/book-list-page/:listType/:page', async (c) => {
+    const listType = c.req.param('listType') as 'wish' | 'read';
+    const page = parseInt(c.req.param('page'), 10);
+
+    logger.info('API: book-list-page request received', { listType, page });
+
+    if (listType !== 'wish' && listType !== 'read') {
+        logger.warn('API: Invalid list type', { listType });
+        return c.json({ error: 'Invalid list type' }, 400);
+    }
+
+    if (isNaN(page) || page < 1) {
+        logger.warn('API: Invalid page number', { page });
+        return c.json({ error: 'Invalid page number' }, 400);
+    }
+
+    try {
+        logger.info('API: Fetching single page', { listType, page });
+        const books = await fetchBookListPage(listType, page);
+
+        logger.info('API: Page fetched successfully', { listType, page, count: books.length });
+
+        // BookCardコンポーネントをHTMLとして返す
+        const htmlElements = books.map(book => <BookCard book={book} />);
+        const html = htmlElements.map(el => el.toString()).join('');
+
+        return c.html(raw(html));
+    } catch (error) {
+        logger.error('API: Failed to fetch page', { listType, page, error: String(error) });
+        return c.json({ error: 'Failed to fetch page' }, 500);
+    }
 });
 
 // APIエンドポイント: 書籍リスト取得（タブ切り替え用 - 後方互換性のため残す）
