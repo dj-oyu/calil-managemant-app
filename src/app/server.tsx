@@ -3,7 +3,7 @@ import { type FC, raw } from 'hono/jsx';
 import { renderToReadableStream, Suspense } from 'hono/jsx/streaming';
 import { serve } from '@hono/node-server';
 import { authRoutes } from './routes/auth.routes';
-import { fetchBookList, fetchBookListMetadata, fetchBookListPages, fetchBookListPage } from '../features/calil/api/fetch-list';
+import { fetchBookList, fetchBookListMetadata, fetchBookListPage } from '../features/calil/api/fetch-list';
 import { convertISBN10to13, NDLsearch, type NdlItem } from '../features/ndl/utility';
 import { logger } from '../shared/logging/logger';
 import { initCoverCache, getCoverImage } from '../features/covers/server/cache';
@@ -558,43 +558,6 @@ app.get('/api/book-list-page/:listType/:page', async (c) => {
     } catch (error) {
         logger.error('API: Failed to fetch page', { listType, page, error: String(error) });
         return c.json({ error: 'Failed to fetch page' }, 500);
-    }
-});
-
-// APIエンドポイント: 書籍リスト取得（タブ切り替え用 - 後方互換性のため残す）
-app.get('/api/book-list/:listType', async (c) => {
-    const listType = c.req.param('listType') as 'wish' | 'read';
-
-    logger.info('API: book-list request received', { listType });
-
-    if (listType !== 'wish' && listType !== 'read') {
-        logger.warn('API: Invalid list type', { listType });
-        return c.json({ error: 'Invalid list type' }, 400);
-    }
-
-    try {
-        logger.info('API: Fetching book list', { listType });
-
-        const bookData = await fetchBookList(listType);
-        const books = (typeof bookData === 'string' ? JSON.parse(bookData) : bookData) as Book[];
-
-        logger.info('API: Book list fetched successfully', { listType, count: books.length });
-
-        // BookListコンポーネントをHTMLとして返す
-        const htmlResponse = c.html(<BookList books={books} />);
-
-        logger.info('API: Sending HTML response', { listType });
-
-        return htmlResponse;
-    } catch (error) {
-        logger.error('API: Failed to fetch book list', { listType, error: String(error) });
-        return c.html(
-            <div style="padding: 2rem; text-align: center; color: #cc0000;">
-                <div style="font-size: 2rem; margin-bottom: 1rem;">⚠️</div>
-                <div>サーバーエラーが発生しました。</div>
-            </div>,
-            500
-        );
     }
 });
 
