@@ -23,6 +23,12 @@ mkdirSync(buildDir, { recursive: true });
 
 // Bundle client loader (main entry point)
 console.log('  Bundling client/islands/loader.ts...');
+console.log('    This will include all statically imported dependencies:');
+console.log('    - base.ts');
+console.log('    - tab-navigation.ts');
+console.log('    - book-detail.ts');
+console.log('    - cover-image.ts');
+console.log('    - shared/logger.ts');
 const loaderResult = await Bun.build({
     entrypoints: [resolve(rootDir, 'client/islands/loader.ts')],
     target: 'browser',
@@ -33,6 +39,28 @@ const loaderResult = await Bun.build({
 if (!loaderResult.success) {
     console.error('❌ Failed to bundle loader:', loaderResult.logs);
     process.exit(1);
+}
+
+// Log bundled files info
+console.log('  Bundle output:');
+for (const output of loaderResult.outputs) {
+    const size = (output.size / 1024).toFixed(2);
+    console.log(`    - ${output.path} (${size} KB)`);
+}
+
+// Verify that all dependencies are bundled
+const bundledCode = await loaderResult.outputs[0].text();
+const hasTabNavigation = bundledCode.includes('TabNavigationIsland') || bundledCode.includes('tab-navigation');
+const hasBookDetail = bundledCode.includes('BookDetailIsland') || bundledCode.includes('book-detail');
+const hasCoverImage = bundledCode.includes('CoverImageIsland') || bundledCode.includes('cover-image');
+
+console.log('  Dependency check:');
+console.log(`    - TabNavigationIsland: ${hasTabNavigation ? '✅' : '❌'}`);
+console.log(`    - BookDetailIsland: ${hasBookDetail ? '✅' : '❌'}`);
+console.log(`    - CoverImageIsland: ${hasCoverImage ? '✅' : '❌'}`);
+
+if (!hasTabNavigation || !hasBookDetail || !hasCoverImage) {
+    console.warn('⚠️  Warning: Some dependencies may not be fully bundled!');
 }
 
 // Read CSS files and generate TypeScript module
