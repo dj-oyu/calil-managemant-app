@@ -283,6 +283,26 @@ const renderBookDetail = (item: NdlItem) => {
     );
 };
 
+// Skeletonカードコンポーネント（ローディング表示用）
+const BookCardSkeleton: FC = () => (
+    <li class="book-card skeleton">
+        <div class="book-content">
+            <div class="book-info">
+                <div class="skeleton-title skeleton-shimmer"></div>
+                <div class="meta">
+                    <div class="skeleton-text skeleton-shimmer"></div>
+                    <div class="skeleton-text skeleton-shimmer"></div>
+                    <div class="skeleton-text skeleton-shimmer"></div>
+                    <div class="skeleton-text skeleton-shimmer"></div>
+                </div>
+            </div>
+            <div class="book-cover">
+                <div class="skeleton-cover skeleton-shimmer"></div>
+            </div>
+        </div>
+    </li>
+);
+
 const BookCard: FC<{ book: Book }> = ({ book }) => {
     const isbn13 = convertISBN10to13(book.isbn);
     return (
@@ -323,6 +343,15 @@ const BookList: FC<{ books: Book[] }> = ({ books }) => (
     <ul>
         {books.map((book) => (
             <BookCard key={book.isbn} book={book} />
+        ))}
+    </ul>
+);
+
+// Skeletonリストコンポーネント（カウントベース）
+const BookListSkeleton: FC<{ count: number }> = ({ count }) => (
+    <ul>
+        {Array.from({ length: count }, (_, i) => (
+            <BookCardSkeleton key={i} />
         ))}
     </ul>
 );
@@ -385,12 +414,7 @@ const StreamingBookListPage: FC<{ activeTab?: 'wish' | 'read' }> = ({ activeTab 
                     data-loaded={activeTab === 'wish' ? 'true' : 'false'}
                 >
                     {activeTab === 'wish' ? (
-                        <Suspense fallback={
-                            <div style="padding: 2rem; text-align: center; color: #666;">
-                                <div style="font-size: 2rem; margin-bottom: 1rem;">📚</div>
-                                <div>読みたい本を読み込み中...</div>
-                            </div>
-                        }>
+                        <Suspense fallback={<BookListSkeleton count={5} />}>
                             <AsyncBookList listType="wish" />
                         </Suspense>
                     ) : (
@@ -408,12 +432,7 @@ const StreamingBookListPage: FC<{ activeTab?: 'wish' | 'read' }> = ({ activeTab 
                     data-loaded={activeTab === 'read' ? 'true' : 'false'}
                 >
                     {activeTab === 'read' ? (
-                        <Suspense fallback={
-                            <div style="padding: 2rem; text-align: center; color: #666;">
-                                <div style="font-size: 2rem; margin-bottom: 1rem;">✅</div>
-                                <div>読んだ本を読み込み中...</div>
-                            </div>
-                        }>
+                        <Suspense fallback={<BookListSkeleton count={2} />}>
                             <AsyncBookList listType="read" />
                         </Suspense>
                     ) : (
