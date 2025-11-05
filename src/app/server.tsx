@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { type FC } from 'hono/jsx';
+import { renderToReadableStream, Suspense } from 'hono/jsx/streaming';
 import { serve } from '@hono/node-server';
 import { authRoutes } from './routes/auth.routes';
 import { fetchBookList } from '../features/calil/api/fetch-list';
@@ -290,7 +291,25 @@ const BookList: FC<{ books: Book[] }> = ({ books }) => (
     </ul>
 );
 
-const BookListPage: FC<{ books: Book[]; readBooks: Book[]; activeTab?: 'wish' | 'read' }> = ({ books, readBooks, activeTab = 'wish' }) => (
+// 非同期書籍リストコンポーネント（Suspense対応）
+const AsyncBookList = async ({ listType }: { listType: 'wish' | 'read' }) => {
+    const bookData = await fetchBookList(listType);
+    const books = (typeof bookData === 'string' ? JSON.parse(bookData) : bookData) as Book[];
+
+    logger.info(`Fetched ${listType} books`, { count: books.length });
+
+    return <BookList books={books} />;
+};
+
+// タブカウントを取得する軽量な非同期コンポーネント
+const AsyncTabCount = async ({ listType }: { listType: 'wish' | 'read' }) => {
+    const bookData = await fetchBookList(listType);
+    const books = (typeof bookData === 'string' ? JSON.parse(bookData) : bookData) as Book[];
+    return <>{books.length}</>;
+};
+
+// Suspense対応のストリーミングページコンポーネント
+const StreamingBookListPage: FC<{ activeTab?: 'wish' | 'read' }> = ({ activeTab = 'wish' }) => (
     <html lang="ja">
         <head>
             <meta charSet="utf-8" />
@@ -306,20 +325,42 @@ const BookListPage: FC<{ books: Book[]; readBooks: Book[]; activeTab?: 'wish' | 
                 <nav class="tab-nav" data-island="tab-navigation">
                     <a href="/?tab=wish" class={`tab-button ${activeTab === 'wish' ? 'active' : ''}`} aria-selected={activeTab === 'wish' ? 'true' : 'false'}>
                         📖 読みたい本
-                        <span class="tab-count">{books.length}</span>
+                        <span class="tab-count">
+                            <Suspense fallback={<>...</>}>
+                                <AsyncTabCount listType="wish" />
+                            </Suspense>
+                        </span>
                     </a>
                     <a href="/?tab=read" class={`tab-button ${activeTab === 'read' ? 'active' : ''}`} aria-selected={activeTab === 'read' ? 'true' : 'false'}>
                         ✅ 読んだ本
-                        <span class="tab-count">{readBooks.length}</span>
+                        <span class="tab-count">
+                            <Suspense fallback={<>...</>}>
+                                <AsyncTabCount listType="read" />
+                            </Suspense>
+                        </span>
                     </a>
                 </nav>
 
                 <div class={`tab-content ${activeTab === 'wish' ? 'active' : ''}`} aria-hidden={activeTab !== 'wish' ? 'true' : 'false'}>
-                    <BookList books={books} />
+                    <Suspense fallback={
+                        <div style="padding: 2rem; text-align: center; color: #666;">
+                            <div style="font-size: 2rem; margin-bottom: 1rem;">📚</div>
+                            <div>読みたい本を読み込み中...</div>
+                        </div>
+                    }>
+                        <AsyncBookList listType="wish" />
+                    </Suspense>
                 </div>
 
                 <div class={`tab-content ${activeTab === 'read' ? 'active' : ''}`} aria-hidden={activeTab !== 'read' ? 'true' : 'false'}>
-                    <BookList books={readBooks} />
+                    <Suspense fallback={
+                        <div style="padding: 2rem; text-align: center; color: #666;">
+                            <div style="font-size: 2rem; margin-bottom: 1rem;">✅</div>
+                            <div>読んだ本を読み込み中...</div>
+                        </div>
+                    }>
+                        <AsyncBookList listType="read" />
+                    </Suspense>
                 </div>
             </main>
             <script type="module" src="/public/islands/loader.js"></script>
@@ -327,17 +368,15 @@ const BookListPage: FC<{ books: Book[]; readBooks: Book[]; activeTab?: 'wish' | 
     </html>
 );
 
-// APIエンドポイント: 書籍詳細取得
-app.get('/api/books/:isbn', async (c) => {
-    const isbn = c.req.param('isbn');
-
+// 非同期書籍詳細コンポーネント（Suspense対応）
+const AsyncBookDetail = async ({ isbn }: { isbn: string }) => {
     logger.info('NDL Search started', { isbn });
 
     const detail = await NDLsearch(isbn);
 
     if (!detail || detail[0] == null) {
         logger.warn('No NDL results found', { isbn });
-        return c.html(<div>詳細情報が見つかりませんでした。</div>);
+        return <div>詳細情報が見つかりませんでした。</div>;
     }
 
     const item = detail[0];
@@ -353,7 +392,31 @@ app.get('/api/books/:isbn', async (c) => {
     };
     logger.info('Book details retrieved', summary);
 
-    return c.html(renderBookDetail(item));
+    return renderBookDetail(item);
+};
+
+// APIエンドポイント: 書籍詳細取得（ストリーミング対応）
+app.get('/api/books/:isbn', async (c) => {
+    const isbn = c.req.param('isbn');
+
+    // Suspenseでラップしてストリーミング
+    const stream = renderToReadableStream(
+        <Suspense fallback={
+            <div style="padding: 1rem; text-align: center; color: #666;">
+                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📚</div>
+                <div>詳細情報を読み込み中...</div>
+            </div>
+        }>
+            <AsyncBookDetail isbn={isbn} />
+        </Suspense>
+    );
+
+    return c.body(stream, {
+        headers: {
+            'Content-Type': 'text/html; charset=UTF-8',
+            'Transfer-Encoding': 'chunked',
+        },
+    });
 });
 
 // ログビューアーエンドポイント
@@ -420,19 +483,21 @@ app.post('/log/clear', (c) => {
     return c.json({ success: true });
 });
 
-// リスト取得（Cookieは内部で自動維持）
+// リスト取得（Suspense + Streaming対応）
 app.get('/', async (c) => {
     const tab = (c.req.query('tab') as 'wish' | 'read') || 'wish';
 
-    const [wishBooks, readBooks] = await Promise.all([
-        fetchBookList('wish'),
-        fetchBookList('read')
-    ]);
+    logger.info('Streaming page request', { tab });
 
-    const books = (typeof wishBooks === 'string' ? JSON.parse(wishBooks) : wishBooks) as Book[];
-    const read = (typeof readBooks === 'string' ? JSON.parse(readBooks) : readBooks) as Book[];
+    // renderToReadableStreamを使用してストリーミングレスポンスを生成
+    const stream = renderToReadableStream(<StreamingBookListPage activeTab={tab} />);
 
-    return c.html(<BookListPage books={books} readBooks={read} activeTab={tab} />);
+    return c.body(stream, {
+        headers: {
+            'Content-Type': 'text/html; charset=UTF-8',
+            'Transfer-Encoding': 'chunked',
+        },
+    });
 });
 
 serve({ fetch: app.fetch, port: 8787 });
