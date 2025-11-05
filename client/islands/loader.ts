@@ -170,6 +170,33 @@ export class IslandLoader {
     }
 
     /**
+     * Reload islands within a specific container
+     * Used when new content is dynamically loaded
+     *
+     * @param container - The container element containing new islands
+     * @returns Promise that resolves when all islands are hydrated
+     * @remarks
+     * This method is called when new content is dynamically loaded into the page,
+     * such as when switching tabs. It finds and hydrates all islands within the
+     * specified container.
+     */
+    async reloadIslands(container: HTMLElement): Promise<void> {
+        console.log('🏝️ Reloading islands in container:', container);
+
+        const islandElements = container.querySelectorAll<HTMLElement>('[data-island]');
+
+        console.log(`🏝️ Found ${islandElements.length} islands to hydrate in container`);
+
+        const hydrationPromises = Array.from(islandElements).map((element) =>
+            this.hydrateIsland(element)
+        );
+
+        await Promise.allSettled(hydrationPromises);
+
+        console.log(`🏝️ Reloaded ${islandElements.length} islands`);
+    }
+
+    /**
      * Get statistics about hydrated islands
      *
      * @returns Object containing total count, counts by type, and cover loader stats
@@ -239,5 +266,13 @@ if (typeof window !== 'undefined') {
 
         // Expose to window for debugging
         (window as any).islandLoader = loader;
+    });
+
+    // Listen for island reload events (e.g., from dynamic content loading)
+    document.addEventListener('island:reload', async (event: Event) => {
+        const customEvent = event as CustomEvent<{ container: HTMLElement }>;
+        if (customEvent.detail?.container) {
+            await loader.reloadIslands(customEvent.detail.container);
+        }
     });
 }

@@ -308,7 +308,7 @@ const AsyncTabCount = async ({ listType }: { listType: 'wish' | 'read' }) => {
     return <>{books.length}</>;
 };
 
-// Suspense対応のストリーミングページコンポーネント
+// Suspense対応のストリーミングページコンポーネント（アクティブなタブのみ読み込み）
 const StreamingBookListPage: FC<{ activeTab?: 'wish' | 'read' }> = ({ activeTab = 'wish' }) => (
     <html lang="ja">
         <head>
@@ -341,26 +341,51 @@ const StreamingBookListPage: FC<{ activeTab?: 'wish' | 'read' }> = ({ activeTab 
                     </a>
                 </nav>
 
-                <div class={`tab-content ${activeTab === 'wish' ? 'active' : ''}`} aria-hidden={activeTab !== 'wish' ? 'true' : 'false'}>
-                    <Suspense fallback={
-                        <div style="padding: 2rem; text-align: center; color: #666;">
+                {/* アクティブなタブのみSuspenseでレンダリング、非アクティブなタブは遅延ロード */}
+                <div
+                    class={`tab-content ${activeTab === 'wish' ? 'active' : ''}`}
+                    aria-hidden={activeTab !== 'wish' ? 'true' : 'false'}
+                    data-list-type="wish"
+                    data-loaded={activeTab === 'wish' ? 'true' : 'false'}
+                >
+                    {activeTab === 'wish' ? (
+                        <Suspense fallback={
+                            <div style="padding: 2rem; text-align: center; color: #666;">
+                                <div style="font-size: 2rem; margin-bottom: 1rem;">📚</div>
+                                <div>読みたい本を読み込み中...</div>
+                            </div>
+                        }>
+                            <AsyncBookList listType="wish" />
+                        </Suspense>
+                    ) : (
+                        <div style="padding: 2rem; text-align: center; color: #999;">
                             <div style="font-size: 2rem; margin-bottom: 1rem;">📚</div>
-                            <div>読みたい本を読み込み中...</div>
+                            <div>タブを切り替えて読み込みます...</div>
                         </div>
-                    }>
-                        <AsyncBookList listType="wish" />
-                    </Suspense>
+                    )}
                 </div>
 
-                <div class={`tab-content ${activeTab === 'read' ? 'active' : ''}`} aria-hidden={activeTab !== 'read' ? 'true' : 'false'}>
-                    <Suspense fallback={
-                        <div style="padding: 2rem; text-align: center; color: #666;">
+                <div
+                    class={`tab-content ${activeTab === 'read' ? 'active' : ''}`}
+                    aria-hidden={activeTab !== 'read' ? 'true' : 'false'}
+                    data-list-type="read"
+                    data-loaded={activeTab === 'read' ? 'true' : 'false'}
+                >
+                    {activeTab === 'read' ? (
+                        <Suspense fallback={
+                            <div style="padding: 2rem; text-align: center; color: #666;">
+                                <div style="font-size: 2rem; margin-bottom: 1rem;">✅</div>
+                                <div>読んだ本を読み込み中...</div>
+                            </div>
+                        }>
+                            <AsyncBookList listType="read" />
+                        </Suspense>
+                    ) : (
+                        <div style="padding: 2rem; text-align: center; color: #999;">
                             <div style="font-size: 2rem; margin-bottom: 1rem;">✅</div>
-                            <div>読んだ本を読み込み中...</div>
+                            <div>タブを切り替えて読み込みます...</div>
                         </div>
-                    }>
-                        <AsyncBookList listType="read" />
-                    </Suspense>
+                    )}
                 </div>
             </main>
             <script type="module" src="/public/islands/loader.js"></script>
@@ -368,15 +393,34 @@ const StreamingBookListPage: FC<{ activeTab?: 'wish' | 'read' }> = ({ activeTab 
     </html>
 );
 
-// 非同期書籍詳細コンポーネント（Suspense対応）
-const AsyncBookDetail = async ({ isbn }: { isbn: string }) => {
+// APIエンドポイント: 書籍リスト取得（タブ切り替え用）
+app.get('/api/book-list/:listType', async (c) => {
+    const listType = c.req.param('listType') as 'wish' | 'read';
+
+    if (listType !== 'wish' && listType !== 'read') {
+        return c.json({ error: 'Invalid list type' }, 400);
+    }
+
+    logger.info('Fetching book list', { listType });
+
+    const bookData = await fetchBookList(listType);
+    const books = (typeof bookData === 'string' ? JSON.parse(bookData) : bookData) as Book[];
+
+    // BookListコンポーネントをHTMLとして返す
+    return c.html(<BookList books={books} />);
+});
+
+// APIエンドポイント: 書籍詳細取得（通常のHTMLレスポンス）
+app.get('/api/books/:isbn', async (c) => {
+    const isbn = c.req.param('isbn');
+
     logger.info('NDL Search started', { isbn });
 
     const detail = await NDLsearch(isbn);
 
     if (!detail || detail[0] == null) {
         logger.warn('No NDL results found', { isbn });
-        return <div>詳細情報が見つかりませんでした。</div>;
+        return c.html(<div>詳細情報が見つかりませんでした。</div>);
     }
 
     const item = detail[0];
@@ -392,31 +436,7 @@ const AsyncBookDetail = async ({ isbn }: { isbn: string }) => {
     };
     logger.info('Book details retrieved', summary);
 
-    return renderBookDetail(item);
-};
-
-// APIエンドポイント: 書籍詳細取得（ストリーミング対応）
-app.get('/api/books/:isbn', async (c) => {
-    const isbn = c.req.param('isbn');
-
-    // Suspenseでラップしてストリーミング
-    const stream = renderToReadableStream(
-        <Suspense fallback={
-            <div style="padding: 1rem; text-align: center; color: #666;">
-                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📚</div>
-                <div>詳細情報を読み込み中...</div>
-            </div>
-        }>
-            <AsyncBookDetail isbn={isbn} />
-        </Suspense>
-    );
-
-    return c.body(stream, {
-        headers: {
-            'Content-Type': 'text/html; charset=UTF-8',
-            'Transfer-Encoding': 'chunked',
-        },
-    });
+    return c.html(renderBookDetail(item));
 });
 
 // ログビューアーエンドポイント

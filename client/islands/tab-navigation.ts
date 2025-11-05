@@ -101,6 +101,7 @@ export class TabNavigationIsland extends Island {
     /**
      * Switch to the specified tab
      * Updates CSS classes and ARIA attributes for both tabs and content
+     * Loads tab content dynamically if not yet loaded
      *
      * @param targetTab - The tab to switch to ('wish' or 'read')
      * @private
@@ -108,7 +109,7 @@ export class TabNavigationIsland extends Island {
      * Assumes first content element corresponds to 'wish' tab,
      * second content element corresponds to 'read' tab
      */
-    private switchToTab(targetTab: 'wish' | 'read'): void {
+    private async switchToTab(targetTab: 'wish' | 'read'): Promise<void> {
         // Update tab buttons
         this.tabs.forEach((tab) => {
             const tabUrl = new URL(tab.href);
@@ -123,19 +124,73 @@ export class TabNavigationIsland extends Island {
             }
         });
 
-        // Update tab contents
-        this.tabContents.forEach((content, index) => {
+        // Update tab contents and load if necessary
+        for (let index = 0; index < this.tabContents.length; index++) {
+            const content = this.tabContents[index];
             // Assuming first content is 'wish', second is 'read'
             const isActive = (index === 0 && targetTab === 'wish') || (index === 1 && targetTab === 'read');
 
             if (isActive) {
                 content.classList.add('active');
                 content.setAttribute('aria-hidden', 'false');
+
+                // Load content if not yet loaded
+                const loaded = content.dataset.loaded === 'true';
+                if (!loaded) {
+                    await this.loadTabContent(content);
+                }
             } else {
                 content.classList.remove('active');
                 content.setAttribute('aria-hidden', 'true');
             }
-        });
+        }
+    }
+
+    /**
+     * Load tab content dynamically from the API
+     *
+     * @param contentElement - The tab content element to populate
+     * @private
+     */
+    private async loadTabContent(contentElement: HTMLElement): Promise<void> {
+        const listType = contentElement.dataset.listType;
+
+        if (!listType || (listType !== 'wish' && listType !== 'read')) {
+            console.error('Invalid list type:', listType);
+            return;
+        }
+
+        // Show loading state
+        contentElement.innerHTML = `
+            <div style="padding: 2rem; text-align: center; color: #666;">
+                <div style="font-size: 2rem; margin-bottom: 1rem;">${listType === 'wish' ? '📚' : '✅'}</div>
+                <div>${listType === 'wish' ? '読みたい本を読み込み中...' : '読んだ本を読み込み中...'}</div>
+            </div>
+        `;
+
+        try {
+            const response = await fetch(`/api/book-list/${listType}`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const html = await response.text();
+            contentElement.innerHTML = html;
+            contentElement.dataset.loaded = 'true';
+
+            // Re-hydrate any islands in the newly loaded content
+            const event = new CustomEvent('island:reload', { detail: { container: contentElement } });
+            document.dispatchEvent(event);
+        } catch (error) {
+            contentElement.innerHTML = `
+                <div style="padding: 2rem; text-align: center; color: #cc0000;">
+                    <div style="font-size: 2rem; margin-bottom: 1rem;">⚠️</div>
+                    <div>読み込みに失敗しました。</div>
+                </div>
+            `;
+            console.error('Failed to load tab content:', error);
+        }
     }
 
     /**
