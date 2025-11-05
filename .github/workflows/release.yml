@@ -1,0 +1,54 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Release Binaries
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build binaries for all platforms
+        run: bun run build:binary
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Calil-management-app-linux-x64
+            dist/Calil-management-app-win-x64.exe
+            dist/Calil-management-app-macos-x64
+            dist/Calil-management-app-macos-arm64
+          body: |
+            ## Binaries
+            Download the appropriate binary for your platform:
+            - **Linux (x64)**: `Calil-management-app-linux-x64`
+            - **Windows (x64)**: `Calil-management-app-win-x64.exe`
+            - **macOS (x64)**: `Calil-management-app-macos-x64`
+            - **macOS (ARM64)**: `Calil-management-app-macos-arm64`
+
+            ### Installation
+            1. Download the binary for your platform
+            2. Make it executable (Linux/macOS): `chmod +x <binary-name>`
+            3. Run: `./<binary-name>`
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
