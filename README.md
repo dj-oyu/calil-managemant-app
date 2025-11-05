@@ -127,19 +127,46 @@ bun run build:binary
 各プラットフォーム用のスタンドアロン実行ファイルをビルド:
 
 ```bash
-# すべてのプラットフォーム用にビルド
+# すべてのプラットフォーム用にビルド（package.jsonのバージョンを使用）
 bun run build
 
 # または
 bun run build:binary
 
-# 特定のプラットフォーム用にビルド
-bun run build:binary:linux
-bun run build:binary:windows
-bun run build:binary:mac
+# カスタムバージョンでビルド
+VERSION=2.0.0 bun run build:binary
 ```
 
 バイナリは `dist/` ディレクトリに作成されます。
+
+#### ファイル名形式
+
+ビルドされたバイナリは以下の形式で命名されます：
+
+```
+Calil-management-app-{version}-{platform}-{arch}[.exe]
+```
+
+例：
+- `Calil-management-app-1.0.0-linux-x64`
+- `Calil-management-app-1.0.0-win-x64.exe`
+- `Calil-management-app-1.0.0-macos-x64`
+- `Calil-management-app-1.0.0-macos-arm64`
+
+#### バージョン管理
+
+バージョン番号は以下の優先順位で決定されます：
+
+1. **環境変数 `VERSION`**: ビルド時に明示的に指定
+2. **package.json**: `version` フィールドの値
+3. **GitHub Actions**: タグからの自動抽出（`v1.0.0` → `1.0.0`）
+
+```bash
+# package.jsonのバージョンを更新してリリース
+npm version patch  # 1.0.0 -> 1.0.1
+npm version minor  # 1.0.0 -> 1.1.0
+npm version major  # 1.0.0 -> 2.0.0
+```
 
 #### ビルドプロセス
 
@@ -148,19 +175,20 @@ bun run build:binary:mac
 1. **アセットバンドル** (`prebuild`): CSS と クライアントJavaScript をバイナリに埋め込むために事前バンドル
 2. **バイナリコンパイル**: Bun を使用して各プラットフォーム用の実行ファイルを生成
 3. **アセット埋め込み**: バンドルされたアセットがバイナリに含まれるため、**外部ファイル不要**
+4. **バージョン付与**: ファイル名にバージョン番号を含める
 
 ### バイナリの配布
 
 ✨ **新機能**: アセットがバイナリに埋め込まれるようになりました！
 
-バイナリをビルドすると、`dist/` ディレクトリに以下のファイルが出力されます：
+バイナリをビルドすると、`dist/` ディレクトリにバージョン番号付きのファイルが出力されます：
 
 ```
 dist/
-├── Calil-management-app-linux-x64       # Linux実行ファイル
-├── Calil-management-app-win-x64.exe     # Windows実行ファイル
-├── Calil-management-app-macos-x64       # macOS (Intel) 実行ファイル
-└── Calil-management-app-macos-arm64     # macOS (Apple Silicon) 実行ファイル
+├── Calil-management-app-1.0.0-linux-x64       # Linux実行ファイル
+├── Calil-management-app-1.0.0-win-x64.exe     # Windows実行ファイル
+├── Calil-management-app-1.0.0-macos-x64       # macOS (Intel) 実行ファイル
+└── Calil-management-app-1.0.0-macos-arm64     # macOS (Apple Silicon) 実行ファイル
 ```
 
 **重要**: バイナリにはすべてのアセット（CSS、JavaScript）が埋め込まれているため、**実行ファイル単体で動作します**。追加のファイルやディレクトリは不要です。
@@ -170,14 +198,15 @@ dist/
 ```bash
 # 単一のバイナリファイルを配布するだけでOK
 # 例: Windowsの場合
-cp dist/Calil-management-app-win-x64.exe /path/to/distribution/
+cp dist/Calil-management-app-1.0.0-win-x64.exe /path/to/distribution/
 
-# または zip で圧縮
+# または zip で圧縮（バージョン番号を含む）
 cd dist
-zip calil-app-linux.zip Calil-management-app-linux-x64
-zip calil-app-windows.zip Calil-management-app-win-x64.exe
-zip calil-app-macos-x64.zip Calil-management-app-macos-x64
-zip calil-app-macos-arm64.zip Calil-management-app-macos-arm64
+VERSION=$(cat ../package.json | grep '"version"' | head -1 | sed 's/.*: "\(.*\)".*/\1/')
+zip "calil-app-${VERSION}-linux.zip" "Calil-management-app-${VERSION}-linux-x64"
+zip "calil-app-${VERSION}-windows.zip" "Calil-management-app-${VERSION}-win-x64.exe"
+zip "calil-app-${VERSION}-macos-x64.zip" "Calil-management-app-${VERSION}-macos-x64"
+zip "calil-app-${VERSION}-macos-arm64.zip" "Calil-management-app-${VERSION}-macos-arm64"
 ```
 
 #### 実行方法
@@ -186,13 +215,28 @@ zip calil-app-macos-arm64.zip Calil-management-app-macos-arm64
 
 ```bash
 # Linux/macOS
-./Calil-management-app-linux-x64
+./Calil-management-app-1.0.0-linux-x64
 
 # Windows
-Calil-management-app-win-x64.exe
+Calil-management-app-1.0.0-win-x64.exe
 ```
 
 追加のファイルやディレクトリは不要です。
+
+#### GitHub Releases
+
+GitHub Actionsを使用した自動リリース：
+
+1. **タグベースのリリース**: `v1.0.0` のようなタグをプッシュすると自動的にビルド＆リリース
+2. **ファイル名**: バージョン番号が自動的にファイル名に含まれる
+3. **リリースノート**: バージョン情報とダウンロードリンクが自動生成される
+
+```bash
+# 新バージョンをリリースする例
+git tag v1.0.0
+git push origin v1.0.0
+# GitHub Actionsが自動的にビルド＆リリースを作成
+```
 
 ## テスト
 
