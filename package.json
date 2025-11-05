@@ -4,11 +4,13 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun --watch index.tsx",
-    "start": "bun index.tsx",
-    "build:binary:linux": "bun build index.tsx --compile --target bun-linux-x64 --outfile dist/Calil-management-app-linux-x64",
-    "build:binary:windows": "bun build index.tsx --compile --target bun-windows-x64 --outfile dist/Calil-management-app-win-x64.exe",
-    "build:binary:mac": "bun build index.tsx --compile --target bun-darwin-x64 --outfile dist/Calil-management-app-macos-x64 && bun build index.tsx --compile --target bun-darwin-arm64 --outfile dist/Calil-management-app-macos-arm64",
+    "dev": "NODE_ENV=development bun --watch index.tsx",
+    "start": "NODE_ENV=production bun index.tsx",
+    "start:dev": "NODE_ENV=development bun index.tsx",
+    "start:prod": "NODE_ENV=production bun index.tsx",
+    "build:binary:linux": "NODE_ENV=production bun build index.tsx --compile --target bun-linux-x64 --outfile dist/Calil-management-app-linux-x64",
+    "build:binary:windows": "NODE_ENV=production bun build index.tsx --compile --target bun-windows-x64 --outfile dist/Calil-management-app-win-x64.exe",
+    "build:binary:mac": "NODE_ENV=production bun build index.tsx --compile --target bun-darwin-x64 --outfile dist/Calil-management-app-macos-x64 && NODE_ENV=production bun build index.tsx --compile --target bun-darwin-arm64 --outfile dist/Calil-management-app-macos-arm64",
     "build:binary": "mkdir -p dist && bun run build:binary:linux && bun run build:binary:windows && bun run build:binary:mac"
   },
   "devDependencies": {

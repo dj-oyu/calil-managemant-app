@@ -10,6 +10,46 @@ import { initCoverCache, getCoverImage } from '../features/covers/server/cache';
 
 const app = new Hono();
 
+// 環境設定
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const isDevelopment = NODE_ENV === 'development';
+
+logger.info('Application starting', {
+    environment: NODE_ENV,
+    isDevelopment,
+    cacheEnabled: !isDevelopment
+});
+
+/**
+ * 環境に応じたキャッシュヘッダーを生成
+ *
+ * @param contentType - Content-Type header value
+ * @param maxAge - Cache max-age in seconds (production only)
+ * @returns Cache headers object
+ *
+ * @remarks
+ * - Development: キャッシュ無効化（即座に変更が反映される）
+ * - Production: 長期キャッシュ（パフォーマンス最適化）
+ */
+function getCacheHeaders(contentType: string, maxAge: number = 31536000): Record<string, string> {
+    if (isDevelopment) {
+        // 開発環境: キャッシュ無効化
+        return {
+            'Content-Type': contentType,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+        };
+    } else {
+        // 本番環境: 長期キャッシュ
+        return {
+            'Content-Type': contentType,
+            'Cache-Control': `public, max-age=${maxAge}, immutable`,
+            'X-Content-Type-Options': 'nosniff',
+        };
+    }
+}
+
 // Initialize cover cache on startup
 await initCoverCache();
 
@@ -28,13 +68,8 @@ app.get('/public/styles/:filename{.+\\.css$}', async (c) => {
     }
 
     const content = await file.text();
-    return c.text(content, 200, {
-        'Content-Type': 'text/css; charset=utf-8',
-        // 開発中はキャッシュを無効化
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-    });
+    const headers = getCacheHeaders('text/css; charset=utf-8', 86400); // 24時間
+    return c.text(content, 200, headers);
 });
 
 // TypeScriptファイルを動的にトランスパイルして配信
@@ -70,13 +105,8 @@ app.get('/public/:path{.+\\.js$}', async (c) => {
                 size: jsCode.length,
                 outputCount: transpiled.outputs.length
             });
-            return c.text(jsCode, 200, {
-                'Content-Type': 'application/javascript; charset=utf-8',
-                // 開発中はキャッシュを無効化（本番環境では max-age を設定する）
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache',
-                'Expires': '0',
-            });
+            const headers = getCacheHeaders('application/javascript; charset=utf-8', 31536000); // 1年
+            return c.text(jsCode, 200, headers);
         }
 
         logger.error('Transpilation failed', {
