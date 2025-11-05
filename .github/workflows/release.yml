@@ -19,6 +19,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Extract version
+        id: version
+        run: |
+          # If triggered by a tag, extract version from tag (v1.0.0 -> 1.0.0)
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag_version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            # Otherwise, use version from package.json
+            VERSION=$(cat package.json | grep '"version"' | head -1 | sed 's/.*: "\(.*\)".*/\1/')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag_version=" >> $GITHUB_OUTPUT
+          fi
+          echo "Building version: $VERSION"
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -28,28 +44,40 @@ jobs:
         run: bun install
 
       - name: Build binaries for all platforms
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: bun run build:binary
+
+      - name: List built files
+        run: ls -lh dist/
 
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/Calil-management-app-linux-x64
-            dist/Calil-management-app-win-x64.exe
-            dist/Calil-management-app-macos-x64
-            dist/Calil-management-app-macos-arm64
+            dist/Calil-management-app-*-linux-x64
+            dist/Calil-management-app-*-win-x64.exe
+            dist/Calil-management-app-*-macos-x64
+            dist/Calil-management-app-*-macos-arm64
           body: |
-            ## Binaries
+            ## Release v${{ steps.version.outputs.version }}
+
+            ### Binaries
             Download the appropriate binary for your platform:
-            - **Linux (x64)**: `Calil-management-app-linux-x64`
-            - **Windows (x64)**: `Calil-management-app-win-x64.exe`
-            - **macOS (x64)**: `Calil-management-app-macos-x64`
-            - **macOS (ARM64)**: `Calil-management-app-macos-arm64`
+            - **Linux (x64)**: `Calil-management-app-${{ steps.version.outputs.version }}-linux-x64`
+            - **Windows (x64)**: `Calil-management-app-${{ steps.version.outputs.version }}-win-x64.exe`
+            - **macOS (x64)**: `Calil-management-app-${{ steps.version.outputs.version }}-macos-x64`
+            - **macOS (ARM64)**: `Calil-management-app-${{ steps.version.outputs.version }}-macos-arm64`
 
             ### Installation
             1. Download the binary for your platform
             2. Make it executable (Linux/macOS): `chmod +x <binary-name>`
             3. Run: `./<binary-name>`
+
+            ### Features
+            - ✨ Single executable file with embedded assets
+            - 🚀 No external dependencies required
+            - 📦 Standalone distribution
           draft: false
           prerelease: false
         env:

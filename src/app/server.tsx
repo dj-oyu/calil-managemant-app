@@ -8,6 +8,7 @@ import { fetchBookList, fetchBookListMetadata, fetchBookListPage } from '../feat
 import { convertISBN10to13, NDLsearch, type NdlItem } from '../features/ndl/utility';
 import { logger } from '../shared/logging/logger';
 import { initCoverCache, getCoverImage } from '../features/covers/server/cache';
+import { embeddedCss, loadEmbeddedClientJs, getEmbeddedClientJs } from './embedded-assets';
 
 const app = new Hono();
 
@@ -54,17 +55,54 @@ function getCacheHeaders(contentType: string, maxAge: number = 31536000): Record
 // Initialize cover cache on startup
 await initCoverCache();
 
+// Load embedded client JavaScript for compiled binaries
+await loadEmbeddedClientJs();
+
 // Define module directory URL for path resolution (from PR #2)
-const moduleDir = new URL('.', import.meta.url);
+// Detect if running as a compiled binary
+const isCompiledBinary = Bun.main !== import.meta.path;
+
+const moduleDir = (() => {
+    if (isCompiledBinary) {
+        // When compiled, use the executable directory
+        const exePath = Bun.main;
+        // Handle both Unix and Windows paths
+        const separator = exePath.includes('\\') ? '\\' : '/';
+        const lastSepIndex = exePath.lastIndexOf(separator);
+        const exeDir = exePath.substring(0, lastSepIndex + 1);
+        // Ensure proper file:// URL format
+        const normalizedPath = exeDir.replace(/\\/g, '/');
+        return new URL(normalizedPath.startsWith('file://') ? normalizedPath : `file://${normalizedPath}`);
+    } else {
+        // In development, use the module directory
+        return new URL('.', import.meta.url);
+    }
+})();
+
+logger.info('Path resolution initialized', {
+    isCompiledBinary,
+    moduleDir: moduleDir.href,
+    bunMain: Bun.main,
+    importMetaPath: import.meta.path,
+});
 
 // CSSファイルを配信
 app.get('/public/styles/:filename{.+\\.css$}', async (c) => {
     const filename = c.req.param('filename');
-    const cssUrl = new URL(`./styles/${filename}`, moduleDir);
 
+    // Try embedded CSS first (for compiled binaries)
+    const embeddedContent = embeddedCss[filename];
+    if (embeddedContent) {
+        logger.debug('Serving embedded CSS', { filename });
+        const headers = getCacheHeaders('text/css; charset=utf-8', 86400); // 24時間
+        return c.text(embeddedContent, 200, headers);
+    }
+
+    // Fall back to file system (for development or if file not embedded)
+    const cssUrl = new URL(`./styles/${filename}`, moduleDir);
     const file = Bun.file(cssUrl);
     if (!(await file.exists())) {
-        logger.warn('CSS file not found', { cssUrl: cssUrl.href });
+        logger.warn('CSS file not found', { cssUrl: cssUrl.href, filename, hasEmbedded: !!embeddedContent });
         return c.text('Not Found', 404);
     }
 
@@ -76,18 +114,30 @@ app.get('/public/styles/:filename{.+\\.css$}', async (c) => {
 // TypeScriptファイルを動的にトランスパイルして配信
 app.get('/public/:path{.+\\.js$}', async (c) => {
     const path = c.req.param('path');
+
+    // Try embedded JavaScript first (for compiled binaries)
+    const embeddedJs = getEmbeddedClientJs(path);
+    if (embeddedJs) {
+        logger.debug('Serving embedded JavaScript', { path });
+        const headers = getCacheHeaders('application/javascript; charset=utf-8', 31536000); // 1年
+        return c.text(embeddedJs, 200, headers);
+    }
+
+    // Fall back to dynamic transpilation (for development)
     // .js を .ts に変換
     const tsPath = path.replace(/\.js$/, '.ts');
 
     // clientディレクトリ全体を検索（scripts/, islands/など）
-    const tsUrl = new URL(`../../client/${tsPath}`, moduleDir);
+    // In compiled binary, client directory is relative to executable
+    // In development, it's ../../client relative to src/app
+    const tsUrl = new URL(isCompiledBinary ? `./client/${tsPath}` : `../../client/${tsPath}`, moduleDir);
 
-    logger.debug('Transpiling request', { path, tsUrl: tsUrl.href });
+    logger.debug('Transpiling request', { path, tsUrl: tsUrl.href, isCompiledBinary });
 
     // ファイルの存在確認
     const file = Bun.file(tsUrl);
     if (!(await file.exists())) {
-        logger.warn('TypeScript file not found', { tsUrl: tsUrl.href });
+        logger.warn('TypeScript file not found', { tsUrl: tsUrl.href, isCompiledBinary, moduleDir: moduleDir.href });
         return c.text('Not Found', 404);
     }
 

@@ -6,6 +6,10 @@ out
 dist
 *.tgz
 
+# build artifacts
+.build
+src/app/embedded-assets.generated.ts
+
 # code coverage
 coverage
 *.lcov
