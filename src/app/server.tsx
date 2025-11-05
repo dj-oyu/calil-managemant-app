@@ -30,7 +30,10 @@ app.get('/public/styles/:filename{.+\\.css$}', async (c) => {
     const content = await file.text();
     return c.text(content, 200, {
         'Content-Type': 'text/css; charset=utf-8',
-        'Cache-Control': 'public, max-age=3600',
+        // 開発中はキャッシュを無効化
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
     });
 });
 
@@ -69,7 +72,10 @@ app.get('/public/:path{.+\\.js$}', async (c) => {
             });
             return c.text(jsCode, 200, {
                 'Content-Type': 'application/javascript; charset=utf-8',
-                'Cache-Control': 'public, max-age=3600',
+                // 開発中はキャッシュを無効化（本番環境では max-age を設定する）
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0',
             });
         }
 
