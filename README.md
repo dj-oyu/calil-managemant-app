@@ -128,6 +128,45 @@ bun run build:binary:mac
 
 バイナリは `dist/` ディレクトリに作成されます。
 
+## テスト
+
+このプロジェクトでは Bun の組み込みテストランナーを使用しています。
+
+### テストの実行
+
+```bash
+# すべてのテストを実行
+bun test
+
+# ウォッチモードで実行（ファイル変更時に自動実行）
+bun test --watch
+```
+
+### テストカバレッジ
+
+現在、以下のモジュールに対する包括的な単体テストがあります：
+
+- ✅ **ユーティリティ関数** (`src/features/ndl/utility.ts`)
+  - ISBN変換、NDL OpenSearch XMLパース
+- ✅ **ロギングシステム** (`src/shared/logging/logger.ts`)
+  - ログレベル、データ付きログ、フォーマット機能
+- ✅ **アプリケーションパス** (`src/shared/config/app-paths.ts`)
+  - クロスプラットフォームパス生成
+- ✅ **セッション管理** (`src/features/auth/session/vault.store.ts`)
+  - Cookie操作とヘッダー生成
+- ✅ **APIユーティリティ** (`src/features/calil/api/fetch-list.ts`)
+  - リクエストヘッダー、ページング計算
+- ✅ **ブラウザパス** (`src/features/auth/puppeteer/browser-path.ts`)
+  - Chrome検出、プラットフォームマッピング
+
+**テスト統計**: 80+ テスト、191+ アサーション
+
+### CI/CD
+
+GitHub Actionsによる自動テスト：
+- プルリクエスト作成時に自動実行
+- mainブランチへのプッシュ時に自動実行
+
 ## プロジェクト構造
 
 ```
