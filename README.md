@@ -128,6 +128,59 @@ bun run build:binary:mac
 
 バイナリは `dist/` ディレクトリに作成されます。
 
+### バイナリの配布
+
+バイナリをビルドすると、以下の構造で `dist/` ディレクトリに出力されます：
+
+```
+dist/
+├── Calil-management-app-linux-x64       # Linux実行ファイル
+├── Calil-management-app-win-x64.exe     # Windows実行ファイル
+├── Calil-management-app-macos-x64       # macOS (Intel) 実行ファイル
+├── Calil-management-app-macos-arm64     # macOS (Apple Silicon) 実行ファイル
+├── styles/                               # CSSアセット
+│   ├── main.css
+│   ├── logs.css
+│   └── variables.css
+└── client/                               # クライアントサイドTypeScript
+    ├── islands/
+    └── shared/
+```
+
+**重要**: バイナリを配布する際は、実行ファイルだけでなく、`styles/` と `client/` ディレクトリも一緒に配布してください。これらのアセットファイルがないと、アプリケーションが正しく動作しません。
+
+#### 配布例
+
+```bash
+# dist ディレクトリ全体を zip で圧縮
+cd dist
+zip -r calil-app-linux.zip Calil-management-app-linux-x64 styles/ client/
+zip -r calil-app-windows.zip Calil-management-app-win-x64.exe styles/ client/
+zip -r calil-app-macos-x64.zip Calil-management-app-macos-x64 styles/ client/
+zip -r calil-app-macos-arm64.zip Calil-management-app-macos-arm64 styles/ client/
+```
+
+#### 実行方法
+
+配布されたバイナリを実行する際は、以下の構造を維持してください：
+
+```
+your-directory/
+├── Calil-management-app-*    # 実行ファイル
+├── styles/                    # 同じディレクトリにアセットを配置
+└── client/
+```
+
+実行：
+
+```bash
+# Linux/macOS
+./Calil-management-app-linux-x64
+
+# Windows
+Calil-management-app-win-x64.exe
+```
+
 ## テスト
 
 このプロジェクトでは Bun の組み込みテストランナーを使用しています。

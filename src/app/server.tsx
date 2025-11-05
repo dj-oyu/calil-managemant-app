@@ -55,16 +55,43 @@ function getCacheHeaders(contentType: string, maxAge: number = 31536000): Record
 await initCoverCache();
 
 // Define module directory URL for path resolution (from PR #2)
-const moduleDir = new URL('.', import.meta.url);
+// Detect if running as a compiled binary
+const isCompiledBinary = Bun.main !== import.meta.path;
+
+const moduleDir = (() => {
+    if (isCompiledBinary) {
+        // When compiled, use the executable directory
+        const exePath = Bun.main;
+        // Handle both Unix and Windows paths
+        const separator = exePath.includes('\\') ? '\\' : '/';
+        const lastSepIndex = exePath.lastIndexOf(separator);
+        const exeDir = exePath.substring(0, lastSepIndex + 1);
+        // Ensure proper file:// URL format
+        const normalizedPath = exeDir.replace(/\\/g, '/');
+        return new URL(normalizedPath.startsWith('file://') ? normalizedPath : `file://${normalizedPath}`);
+    } else {
+        // In development, use the module directory
+        return new URL('.', import.meta.url);
+    }
+})();
+
+logger.info('Path resolution initialized', {
+    isCompiledBinary,
+    moduleDir: moduleDir.href,
+    bunMain: Bun.main,
+    importMetaPath: import.meta.path,
+});
 
 // CSSファイルを配信
 app.get('/public/styles/:filename{.+\\.css$}', async (c) => {
     const filename = c.req.param('filename');
-    const cssUrl = new URL(`./styles/${filename}`, moduleDir);
+    // In compiled binary, assets are in the same directory as executable
+    // In development, assets are in src/app/styles
+    const cssUrl = new URL(isCompiledBinary ? `./styles/${filename}` : `./styles/${filename}`, moduleDir);
 
     const file = Bun.file(cssUrl);
     if (!(await file.exists())) {
-        logger.warn('CSS file not found', { cssUrl: cssUrl.href });
+        logger.warn('CSS file not found', { cssUrl: cssUrl.href, isCompiledBinary, moduleDir: moduleDir.href });
         return c.text('Not Found', 404);
     }
 
@@ -80,14 +107,16 @@ app.get('/public/:path{.+\\.js$}', async (c) => {
     const tsPath = path.replace(/\.js$/, '.ts');
 
     // clientディレクトリ全体を検索（scripts/, islands/など）
-    const tsUrl = new URL(`../../client/${tsPath}`, moduleDir);
+    // In compiled binary, client directory is relative to executable
+    // In development, it's ../../client relative to src/app
+    const tsUrl = new URL(isCompiledBinary ? `./client/${tsPath}` : `../../client/${tsPath}`, moduleDir);
 
-    logger.debug('Transpiling request', { path, tsUrl: tsUrl.href });
+    logger.debug('Transpiling request', { path, tsUrl: tsUrl.href, isCompiledBinary });
 
     // ファイルの存在確認
     const file = Bun.file(tsUrl);
     if (!(await file.exists())) {
-        logger.warn('TypeScript file not found', { tsUrl: tsUrl.href });
+        logger.warn('TypeScript file not found', { tsUrl: tsUrl.href, isCompiledBinary, moduleDir: moduleDir.href });
         return c.text('Not Found', 404);
     }
 
