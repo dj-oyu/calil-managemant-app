@@ -181,19 +181,33 @@ export class IslandLoader {
      * specified container.
      */
     async reloadIslands(container: HTMLElement): Promise<void> {
-        console.log('🏝️ Reloading islands in container:', container);
+        console.log('🏝️ [reloadIslands] Starting reload for container:', container);
 
         const islandElements = container.querySelectorAll<HTMLElement>('[data-island]');
 
-        console.log(`🏝️ Found ${islandElements.length} islands to hydrate in container`);
+        console.log(`🏝️ [reloadIslands] Found ${islandElements.length} islands to hydrate`);
+
+        if (islandElements.length === 0) {
+            console.log('🏝️ [reloadIslands] No islands found in container');
+            return;
+        }
+
+        // Log each island type found
+        islandElements.forEach((element, index) => {
+            console.log(`🏝️ [reloadIslands] Island ${index + 1}: type="${element.dataset.island}"`);
+        });
 
         const hydrationPromises = Array.from(islandElements).map((element) =>
             this.hydrateIsland(element)
         );
 
-        await Promise.allSettled(hydrationPromises);
+        const results = await Promise.allSettled(hydrationPromises);
 
-        console.log(`🏝️ Reloaded ${islandElements.length} islands`);
+        // Log results
+        const successful = results.filter(r => r.status === 'fulfilled').length;
+        const failed = results.filter(r => r.status === 'rejected').length;
+
+        console.log(`🏝️ [reloadIslands] Complete: ${successful} succeeded, ${failed} failed`);
     }
 
     /**
@@ -270,9 +284,13 @@ if (typeof window !== 'undefined') {
 
     // Listen for island reload events (e.g., from dynamic content loading)
     document.addEventListener('island:reload', async (event: Event) => {
+        console.log('🏝️ [Event] island:reload event received');
         const customEvent = event as CustomEvent<{ container: HTMLElement }>;
         if (customEvent.detail?.container) {
+            console.log('🏝️ [Event] Container found, calling reloadIslands');
             await loader.reloadIslands(customEvent.detail.container);
+        } else {
+            console.warn('🏝️ [Event] No container in event detail');
         }
     });
 }

@@ -53,6 +53,19 @@ export class TabNavigationIsland extends Island {
     async hydrate(): Promise<void> {
         if (this.checkHydrated()) return;
 
+        console.log('🔖 [Hydrate] Starting TabNavigationIsland hydration');
+        console.log('🔖 [Hydrate] Found', this.tabs.length, 'tab buttons');
+        console.log('🔖 [Hydrate] Found', this.tabContents.length, 'tab contents');
+
+        // Log tab content details
+        this.tabContents.forEach((content, index) => {
+            console.log(`🔖 [Hydrate] Tab content ${index}:`, {
+                listType: content.dataset.listType,
+                loaded: content.dataset.loaded,
+                active: content.classList.contains('active')
+            });
+        });
+
         // Add click listeners to tabs
         this.tabs.forEach((tab) => {
             tab.addEventListener('click', this.handleTabClick);
@@ -62,7 +75,7 @@ export class TabNavigationIsland extends Island {
         window.addEventListener('popstate', this.handlePopState);
 
         this.markHydrated();
-        console.log('🔖 TabNavigationIsland hydrated');
+        console.log('🔖 [Hydrate] TabNavigationIsland hydrated successfully');
     }
 
     /**
@@ -106,10 +119,12 @@ export class TabNavigationIsland extends Island {
      * @param targetTab - The tab to switch to ('wish' or 'read')
      * @private
      * @remarks
-     * Assumes first content element corresponds to 'wish' tab,
-     * second content element corresponds to 'read' tab
+     * Uses data-list-type attribute to match content with tabs,
+     * avoiding index-based assumptions
      */
     private async switchToTab(targetTab: 'wish' | 'read'): Promise<void> {
+        console.log('🔖 Switching to tab:', targetTab);
+
         // Update tab buttons
         this.tabs.forEach((tab) => {
             const tabUrl = new URL(tab.href);
@@ -125,10 +140,11 @@ export class TabNavigationIsland extends Island {
         });
 
         // Update tab contents and load if necessary
-        for (let index = 0; index < this.tabContents.length; index++) {
-            const content = this.tabContents[index];
-            // Assuming first content is 'wish', second is 'read'
-            const isActive = (index === 0 && targetTab === 'wish') || (index === 1 && targetTab === 'read');
+        this.tabContents.forEach((content) => {
+            const listType = content.dataset.listType;
+            const isActive = listType === targetTab;
+
+            console.log(`🔖 Tab content [${listType}]: active=${isActive}, loaded=${content.dataset.loaded}`);
 
             if (isActive) {
                 content.classList.add('active');
@@ -137,13 +153,18 @@ export class TabNavigationIsland extends Island {
                 // Load content if not yet loaded
                 const loaded = content.dataset.loaded === 'true';
                 if (!loaded) {
-                    await this.loadTabContent(content);
+                    console.log(`🔖 Loading content for: ${listType}`);
+                    // Note: Not awaiting here to allow UI to update immediately
+                    // Content will load in background
+                    this.loadTabContent(content).catch(err => {
+                        console.error('Failed to load tab content:', err);
+                    });
                 }
             } else {
                 content.classList.remove('active');
                 content.setAttribute('aria-hidden', 'true');
             }
-        }
+        });
     }
 
     /**
@@ -155,12 +176,15 @@ export class TabNavigationIsland extends Island {
     private async loadTabContent(contentElement: HTMLElement): Promise<void> {
         const listType = contentElement.dataset.listType;
 
+        console.log('📥 loadTabContent called for:', listType);
+
         if (!listType || (listType !== 'wish' && listType !== 'read')) {
-            console.error('Invalid list type:', listType);
+            console.error('❌ Invalid list type:', listType);
             return;
         }
 
         // Show loading state
+        console.log('⏳ Showing loading state for:', listType);
         contentElement.innerHTML = `
             <div style="padding: 2rem; text-align: center; color: #666;">
                 <div style="font-size: 2rem; margin-bottom: 1rem;">${listType === 'wish' ? '📚' : '✅'}</div>
@@ -169,27 +193,36 @@ export class TabNavigationIsland extends Island {
         `;
 
         try {
+            console.log(`🌐 Fetching /api/book-list/${listType}`);
             const response = await fetch(`/api/book-list/${listType}`);
+
+            console.log(`📊 Response status: ${response.status}`);
 
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
             const html = await response.text();
+            console.log(`✅ Received HTML (${html.length} chars)`);
+
             contentElement.innerHTML = html;
             contentElement.dataset.loaded = 'true';
 
+            console.log('🏝️ Dispatching island:reload event');
             // Re-hydrate any islands in the newly loaded content
             const event = new CustomEvent('island:reload', { detail: { container: contentElement } });
             document.dispatchEvent(event);
+
+            console.log('✅ Tab content loaded successfully for:', listType);
         } catch (error) {
+            console.error('❌ Failed to load tab content:', error);
             contentElement.innerHTML = `
                 <div style="padding: 2rem; text-align: center; color: #cc0000;">
                     <div style="font-size: 2rem; margin-bottom: 1rem;">⚠️</div>
                     <div>読み込みに失敗しました。</div>
+                    <div style="font-size: 0.875rem; margin-top: 0.5rem; color: #999;">${error instanceof Error ? error.message : String(error)}</div>
                 </div>
             `;
-            console.error('Failed to load tab content:', error);
         }
     }
 

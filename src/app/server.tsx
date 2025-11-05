@@ -397,17 +397,37 @@ const StreamingBookListPage: FC<{ activeTab?: 'wish' | 'read' }> = ({ activeTab 
 app.get('/api/book-list/:listType', async (c) => {
     const listType = c.req.param('listType') as 'wish' | 'read';
 
+    logger.info('API: book-list request received', { listType });
+
     if (listType !== 'wish' && listType !== 'read') {
+        logger.warn('API: Invalid list type', { listType });
         return c.json({ error: 'Invalid list type' }, 400);
     }
 
-    logger.info('Fetching book list', { listType });
+    try {
+        logger.info('API: Fetching book list', { listType });
 
-    const bookData = await fetchBookList(listType);
-    const books = (typeof bookData === 'string' ? JSON.parse(bookData) : bookData) as Book[];
+        const bookData = await fetchBookList(listType);
+        const books = (typeof bookData === 'string' ? JSON.parse(bookData) : bookData) as Book[];
 
-    // BookListコンポーネントをHTMLとして返す
-    return c.html(<BookList books={books} />);
+        logger.info('API: Book list fetched successfully', { listType, count: books.length });
+
+        // BookListコンポーネントをHTMLとして返す
+        const htmlResponse = c.html(<BookList books={books} />);
+
+        logger.info('API: Sending HTML response', { listType });
+
+        return htmlResponse;
+    } catch (error) {
+        logger.error('API: Failed to fetch book list', { listType, error: String(error) });
+        return c.html(
+            <div style="padding: 2rem; text-align: center; color: #cc0000;">
+                <div style="font-size: 2rem; margin-bottom: 1rem;">⚠️</div>
+                <div>サーバーエラーが発生しました。</div>
+            </div>,
+            500
+        );
+    }
 });
 
 // APIエンドポイント: 書籍詳細取得（通常のHTMLレスポンス）
