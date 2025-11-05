@@ -168,6 +168,36 @@ export class TabNavigationIsland extends Island {
     }
 
     /**
+     * Generate Skeleton UI HTML
+     *
+     * @param count - Number of skeleton cards to generate
+     * @private
+     * @returns HTML string for skeleton cards
+     */
+    private generateSkeletonHTML(count: number): string {
+        const skeletonCard = `
+            <li class="book-card skeleton">
+                <div class="book-content">
+                    <div class="book-info">
+                        <div class="skeleton-title skeleton-shimmer"></div>
+                        <div class="meta">
+                            <div class="skeleton-text skeleton-shimmer"></div>
+                            <div class="skeleton-text skeleton-shimmer"></div>
+                            <div class="skeleton-text skeleton-shimmer"></div>
+                            <div class="skeleton-text skeleton-shimmer"></div>
+                        </div>
+                    </div>
+                    <div class="book-cover">
+                        <div class="skeleton-cover skeleton-shimmer"></div>
+                    </div>
+                </div>
+            </li>
+        `;
+
+        return `<ul>${skeletonCard.repeat(count)}</ul>`;
+    }
+
+    /**
      * Load tab content dynamically from the API
      *
      * @param contentElement - The tab content element to populate
@@ -183,14 +213,10 @@ export class TabNavigationIsland extends Island {
             return;
         }
 
-        // Show loading state
-        console.log('⏳ Showing loading state for:', listType);
-        contentElement.innerHTML = `
-            <div style="padding: 2rem; text-align: center; color: #666;">
-                <div style="font-size: 2rem; margin-bottom: 1rem;">${listType === 'wish' ? '📚' : '✅'}</div>
-                <div>${listType === 'wish' ? '読みたい本を読み込み中...' : '読んだ本を読み込み中...'}</div>
-            </div>
-        `;
+        // Show Skeleton UI as loading state
+        console.log('⏳ Showing Skeleton UI for:', listType);
+        const skeletonCount = listType === 'wish' ? 5 : 2;
+        contentElement.innerHTML = this.generateSkeletonHTML(skeletonCount);
 
         try {
             console.log(`🌐 Fetching /api/book-list/${listType}`);
@@ -216,11 +242,29 @@ export class TabNavigationIsland extends Island {
             console.log('✅ Tab content loaded successfully for:', listType);
         } catch (error) {
             console.error('❌ Failed to load tab content:', error);
+
+            // Show error with retry option
+            const errorMessage = error instanceof Error ? error.message : String(error);
             contentElement.innerHTML = `
-                <div style="padding: 2rem; text-align: center; color: #cc0000;">
-                    <div style="font-size: 2rem; margin-bottom: 1rem;">⚠️</div>
-                    <div>読み込みに失敗しました。</div>
-                    <div style="font-size: 0.875rem; margin-top: 0.5rem; color: #999;">${error instanceof Error ? error.message : String(error)}</div>
+                <div style="padding: 2rem; text-align: center;">
+                    <div style="font-size: 2rem; margin-bottom: 1rem; color: #cc0000;">⚠️</div>
+                    <div style="color: #24292f; font-weight: 600; margin-bottom: 0.5rem;">読み込みに失敗しました</div>
+                    <div style="font-size: 0.875rem; color: #57606a; margin-bottom: 1rem;">${errorMessage}</div>
+                    <button
+                        onclick="location.reload()"
+                        style="
+                            padding: 0.5rem 1rem;
+                            background: #0969da;
+                            color: white;
+                            border: none;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            font-size: 0.875rem;
+                            font-weight: 600;
+                        "
+                    >
+                        🔄 再読み込み
+                    </button>
                 </div>
             `;
         }
