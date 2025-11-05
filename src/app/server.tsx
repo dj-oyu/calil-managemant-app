@@ -12,14 +12,17 @@ const app = new Hono();
 // Initialize cover cache on startup
 await initCoverCache();
 
+// Define module directory URL for path resolution (from PR #2)
+const moduleDir = new URL('.', import.meta.url);
+
 // CSSファイルを配信
 app.get('/public/styles/:filename{.+\\.css$}', async (c) => {
     const filename = c.req.param('filename');
-    const cssPath = `./src/app/styles/${filename}`;
+    const cssUrl = new URL(`./styles/${filename}`, moduleDir);
 
-    const file = Bun.file(cssPath);
+    const file = Bun.file(cssUrl);
     if (!(await file.exists())) {
-        logger.warn('CSS file not found', { cssPath });
+        logger.warn('CSS file not found', { cssUrl: cssUrl.href });
         return c.text('Not Found', 404);
     }
 
@@ -31,24 +34,26 @@ app.get('/public/styles/:filename{.+\\.css$}', async (c) => {
 });
 
 // TypeScriptファイルを動的にトランスパイルして配信
-app.get('/public/:filename{.+\\.js$}', async (c) => {
-    const filename = c.req.param('filename');
+app.get('/public/:path{.+\\.js$}', async (c) => {
+    const path = c.req.param('path');
     // .js を .ts に変換
-    const tsFilename = filename.replace(/\.js$/, '.ts');
-    const tsPath = `./client/scripts/${tsFilename}`;
+    const tsPath = path.replace(/\.js$/, '.ts');
 
-    logger.debug('Transpiling request', { filename, tsPath });
+    // clientディレクトリ全体を検索（scripts/, islands/など）
+    const tsUrl = new URL(`../../client/${tsPath}`, moduleDir);
+
+    logger.debug('Transpiling request', { path, tsUrl: tsUrl.href });
 
     // ファイルの存在確認
-    const file = Bun.file(tsPath);
+    const file = Bun.file(tsUrl);
     if (!(await file.exists())) {
-        logger.warn('TypeScript file not found', { tsPath });
+        logger.warn('TypeScript file not found', { tsUrl: tsUrl.href });
         return c.text('Not Found', 404);
     }
 
     try {
         const transpiled = await Bun.build({
-            entrypoints: [tsPath],
+            entrypoints: [tsUrl.pathname],
             target: 'browser',
             minify: false,
         });
@@ -56,7 +61,8 @@ app.get('/public/:filename{.+\\.js$}', async (c) => {
         if (transpiled.success && transpiled.outputs[0]) {
             const jsCode = await transpiled.outputs[0].text();
             logger.info('Transpiled successfully', {
-                filename,
+                path,
+                tsPath: tsUrl.pathname,
                 size: jsCode.length,
                 outputCount: transpiled.outputs.length
             });
@@ -67,13 +73,18 @@ app.get('/public/:filename{.+\\.js$}', async (c) => {
         }
 
         logger.error('Transpilation failed', {
-            filename,
+            path,
+            tsUrl: tsUrl.href,
             success: transpiled.success,
             logs: transpiled.logs
         });
         return c.text('Transpilation Error', 500);
     } catch (error) {
-        logger.error('Error transpiling TypeScript', { filename, error: String(error) });
+        logger.error('Error transpiling TypeScript', {
+            path,
+            tsUrl: tsUrl.href,
+            error: String(error)
+        });
         return c.text('Internal Server Error', 500);
     }
 });
@@ -249,7 +260,7 @@ const BookCard: FC<{ book: Book }> = ({ book }) => {
                         <span class="isbn">ISBN: {isbn13 || '―'}</span>
                     </div>
                     {isbn13 && (
-                        <details class="ndl" data-isbn={isbn13}>
+                        <details class="ndl" data-island="book-detail" data-isbn={isbn13}>
                             <summary>詳細情報を表示</summary>
                             <div class="ndl-content"></div>
                         </details>
@@ -259,8 +270,8 @@ const BookCard: FC<{ book: Book }> = ({ book }) => {
                     <div class="book-cover">
                         <div
                             class="cover-placeholder"
+                            data-island="cover-image"
                             data-isbn={isbn13}
-                            data-lazy-cover=""
                         >
                             <span class="cover-loading">📚</span>
                         </div>
@@ -292,27 +303,26 @@ const BookListPage: FC<{ books: Book[]; readBooks: Book[]; activeTab?: 'wish' | 
             <main>
                 <h1>📚 マイブックリスト</h1>
 
-                <nav class="tab-nav">
-                    <a href="/?tab=wish" class={`tab-button ${activeTab === 'wish' ? 'active' : ''}`}>
+                <nav class="tab-nav" data-island="tab-navigation">
+                    <a href="/?tab=wish" class={`tab-button ${activeTab === 'wish' ? 'active' : ''}`} aria-selected={activeTab === 'wish' ? 'true' : 'false'}>
                         📖 読みたい本
                         <span class="tab-count">{books.length}</span>
                     </a>
-                    <a href="/?tab=read" class={`tab-button ${activeTab === 'read' ? 'active' : ''}`}>
+                    <a href="/?tab=read" class={`tab-button ${activeTab === 'read' ? 'active' : ''}`} aria-selected={activeTab === 'read' ? 'true' : 'false'}>
                         ✅ 読んだ本
                         <span class="tab-count">{readBooks.length}</span>
                     </a>
                 </nav>
 
-                <div class={`tab-content ${activeTab === 'wish' ? 'active' : ''}`}>
+                <div class={`tab-content ${activeTab === 'wish' ? 'active' : ''}`} aria-hidden={activeTab !== 'wish' ? 'true' : 'false'}>
                     <BookList books={books} />
                 </div>
 
-                <div class={`tab-content ${activeTab === 'read' ? 'active' : ''}`}>
+                <div class={`tab-content ${activeTab === 'read' ? 'active' : ''}`} aria-hidden={activeTab !== 'read' ? 'true' : 'false'}>
                     <BookList books={readBooks} />
                 </div>
             </main>
-            <script type="module" src="/public/accordion.js"></script>
-            <script type="module" src="/public/cover-loader.js"></script>
+            <script type="module" src="/public/islands/loader.js"></script>
         </body>
     </html>
 );
