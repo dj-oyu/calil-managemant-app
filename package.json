@@ -12,6 +12,7 @@
     "build:binary": "mkdir -p dist && bun run build:binary:linux && bun run build:binary:windows && bun run build:binary:mac"
   },
   "devDependencies": {
+    "@hono/cli": "^0.1.0",
     "@types/bun": "latest",
     "@types/puppeteer": "^7.0.4"
   },
