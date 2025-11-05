@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
-import { type FC, raw } from 'hono/jsx';
+import { type FC } from 'hono/jsx';
 import { renderToReadableStream, Suspense } from 'hono/jsx/streaming';
+import { raw } from 'hono/html';
 import { serve } from '@hono/node-server';
 import { authRoutes } from './routes/auth.routes';
 import { fetchBookList, fetchBookListMetadata, fetchBookListPage } from '../features/calil/api/fetch-list';
