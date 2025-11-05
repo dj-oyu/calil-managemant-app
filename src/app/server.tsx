@@ -8,6 +8,7 @@ import { fetchBookList, fetchBookListMetadata, fetchBookListPage } from '../feat
 import { convertISBN10to13, NDLsearch, type NdlItem } from '../features/ndl/utility';
 import { logger } from '../shared/logging/logger';
 import { initCoverCache, getCoverImage } from '../features/covers/server/cache';
+import { embeddedCss, loadEmbeddedClientJs, getEmbeddedClientJs } from './embedded-assets';
 
 const app = new Hono();
 
@@ -54,6 +55,9 @@ function getCacheHeaders(contentType: string, maxAge: number = 31536000): Record
 // Initialize cover cache on startup
 await initCoverCache();
 
+// Load embedded client JavaScript for compiled binaries
+await loadEmbeddedClientJs();
+
 // Define module directory URL for path resolution (from PR #2)
 // Detect if running as a compiled binary
 const isCompiledBinary = Bun.main !== import.meta.path;
@@ -85,13 +89,20 @@ logger.info('Path resolution initialized', {
 // CSSファイルを配信
 app.get('/public/styles/:filename{.+\\.css$}', async (c) => {
     const filename = c.req.param('filename');
-    // In compiled binary, assets are in the same directory as executable
-    // In development, assets are in src/app/styles
-    const cssUrl = new URL(isCompiledBinary ? `./styles/${filename}` : `./styles/${filename}`, moduleDir);
 
+    // Try embedded CSS first (for compiled binaries)
+    const embeddedContent = embeddedCss[filename];
+    if (embeddedContent) {
+        logger.debug('Serving embedded CSS', { filename });
+        const headers = getCacheHeaders('text/css; charset=utf-8', 86400); // 24時間
+        return c.text(embeddedContent, 200, headers);
+    }
+
+    // Fall back to file system (for development or if file not embedded)
+    const cssUrl = new URL(`./styles/${filename}`, moduleDir);
     const file = Bun.file(cssUrl);
     if (!(await file.exists())) {
-        logger.warn('CSS file not found', { cssUrl: cssUrl.href, isCompiledBinary, moduleDir: moduleDir.href });
+        logger.warn('CSS file not found', { cssUrl: cssUrl.href, filename, hasEmbedded: !!embeddedContent });
         return c.text('Not Found', 404);
     }
 
@@ -103,6 +114,16 @@ app.get('/public/styles/:filename{.+\\.css$}', async (c) => {
 // TypeScriptファイルを動的にトランスパイルして配信
 app.get('/public/:path{.+\\.js$}', async (c) => {
     const path = c.req.param('path');
+
+    // Try embedded JavaScript first (for compiled binaries)
+    const embeddedJs = getEmbeddedClientJs(path);
+    if (embeddedJs) {
+        logger.debug('Serving embedded JavaScript', { path });
+        const headers = getCacheHeaders('application/javascript; charset=utf-8', 31536000); // 1年
+        return c.text(embeddedJs, 200, headers);
+    }
+
+    // Fall back to dynamic transpilation (for development)
     // .js を .ts に変換
     const tsPath = path.replace(/\.js$/, '.ts');
 

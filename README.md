@@ -128,6 +128,9 @@ bun run build:binary
 
 ```bash
 # すべてのプラットフォーム用にビルド
+bun run build
+
+# または
 bun run build:binary
 
 # 特定のプラットフォーム用にビルド
@@ -138,50 +141,48 @@ bun run build:binary:mac
 
 バイナリは `dist/` ディレクトリに作成されます。
 
+#### ビルドプロセス
+
+ビルド時には以下の処理が自動的に実行されます：
+
+1. **アセットバンドル** (`prebuild`): CSS と クライアントJavaScript をバイナリに埋め込むために事前バンドル
+2. **バイナリコンパイル**: Bun を使用して各プラットフォーム用の実行ファイルを生成
+3. **アセット埋め込み**: バンドルされたアセットがバイナリに含まれるため、**外部ファイル不要**
+
 ### バイナリの配布
 
-バイナリをビルドすると、以下の構造で `dist/` ディレクトリに出力されます：
+✨ **新機能**: アセットがバイナリに埋め込まれるようになりました！
+
+バイナリをビルドすると、`dist/` ディレクトリに以下のファイルが出力されます：
 
 ```
 dist/
 ├── Calil-management-app-linux-x64       # Linux実行ファイル
 ├── Calil-management-app-win-x64.exe     # Windows実行ファイル
 ├── Calil-management-app-macos-x64       # macOS (Intel) 実行ファイル
-├── Calil-management-app-macos-arm64     # macOS (Apple Silicon) 実行ファイル
-├── styles/                               # CSSアセット
-│   ├── main.css
-│   ├── logs.css
-│   └── variables.css
-└── client/                               # クライアントサイドTypeScript
-    ├── islands/
-    └── shared/
+└── Calil-management-app-macos-arm64     # macOS (Apple Silicon) 実行ファイル
 ```
 
-**重要**: バイナリを配布する際は、実行ファイルだけでなく、`styles/` と `client/` ディレクトリも一緒に配布してください。これらのアセットファイルがないと、アプリケーションが正しく動作しません。
+**重要**: バイナリにはすべてのアセット（CSS、JavaScript）が埋め込まれているため、**実行ファイル単体で動作します**。追加のファイルやディレクトリは不要です。
 
 #### 配布例
 
 ```bash
-# dist ディレクトリ全体を zip で圧縮
+# 単一のバイナリファイルを配布するだけでOK
+# 例: Windowsの場合
+cp dist/Calil-management-app-win-x64.exe /path/to/distribution/
+
+# または zip で圧縮
 cd dist
-zip -r calil-app-linux.zip Calil-management-app-linux-x64 styles/ client/
-zip -r calil-app-windows.zip Calil-management-app-win-x64.exe styles/ client/
-zip -r calil-app-macos-x64.zip Calil-management-app-macos-x64 styles/ client/
-zip -r calil-app-macos-arm64.zip Calil-management-app-macos-arm64 styles/ client/
+zip calil-app-linux.zip Calil-management-app-linux-x64
+zip calil-app-windows.zip Calil-management-app-win-x64.exe
+zip calil-app-macos-x64.zip Calil-management-app-macos-x64
+zip calil-app-macos-arm64.zip Calil-management-app-macos-arm64
 ```
 
 #### 実行方法
 
-配布されたバイナリを実行する際は、以下の構造を維持してください：
-
-```
-your-directory/
-├── Calil-management-app-*    # 実行ファイル
-├── styles/                    # 同じディレクトリにアセットを配置
-└── client/
-```
-
-実行：
+バイナリを任意の場所に配置して実行：
 
 ```bash
 # Linux/macOS
@@ -190,6 +191,8 @@ your-directory/
 # Windows
 Calil-management-app-win-x64.exe
 ```
+
+追加のファイルやディレクトリは不要です。
 
 ## テスト
 
