@@ -49,7 +49,7 @@ for (const output of loaderResult.outputs) {
 }
 
 // Verify that all dependencies are bundled
-const bundledCode = await loaderResult.outputs[0].text();
+const bundledCode = await loaderResult.outputs[0]?.text() ?? '';
 const hasTabNavigation = bundledCode.includes('TabNavigationIsland') || bundledCode.includes('tab-navigation');
 const hasBookDetail = bundledCode.includes('BookDetailIsland') || bundledCode.includes('book-detail');
 const hasCoverImage = bundledCode.includes('CoverImageIsland') || bundledCode.includes('cover-image');
