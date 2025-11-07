@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     name: Build Release Binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim  # Cost-optimized runner. If build exceeds 15min, consider ubuntu-latest or ubuntu-latest-4core
 
     steps:
       - name: Checkout code
