@@ -309,3 +309,5 @@ GitHub Actionsによる自動テスト：
 ## ライセンス
 
 このプロジェクトはプライベートです。
+
+<!-- Test workflow performance with ubuntu-slim runner -->
