@@ -58,6 +58,20 @@ function setInCache<T>(
     });
 }
 
+function clearCache(pattern?: string): void {
+    if (pattern) {
+        // Clear specific cache entries matching pattern
+        for (const key of cache.keys()) {
+            if (key.includes(pattern)) {
+                cache.delete(key);
+            }
+        }
+    } else {
+        // Clear all cache
+        cache.clear();
+    }
+}
+
 // Types
 type BookElement = {
     author: string;
@@ -137,6 +151,79 @@ async function fetchYomitaiToken(
     return data;
 }
 
+/**
+ * Common function to ensure valid session and token
+ * Handles session refresh and token caching with auto-retry on expiration
+ */
+async function ensureSessionAndToken(): Promise<{
+    cookie: Cookie;
+    yomitaiToken: YomitaiTokenResponse;
+}> {
+    let v = await loadCookies();
+    if (!v || !(await isValidSession(v))) {
+        v = await ensureSession();
+        clearCache();
+        console.log("Session refreshed, cleared all caches");
+    }
+
+    let yomitaiToken: YomitaiTokenResponse;
+    try {
+        yomitaiToken = await fetchYomitaiToken(v.cookies[0]!);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("Unauthorized")) {
+            v = await ensureSession();
+            clearCache();
+            console.log(
+                "Unauthorized error, refreshed session and cleared caches",
+            );
+            yomitaiToken = await fetchYomitaiToken(v.cookies[0]!);
+        } else {
+            throw error;
+        }
+    }
+
+    return {
+        cookie: v.cookies[0]!,
+        yomitaiToken,
+    };
+}
+
+/**
+ * Retry function with token refresh on Forbidden/Unauthorized errors
+ */
+async function retryWithTokenRefresh<T>(
+    operation: (
+        cookie: Cookie,
+        yomitaiToken: YomitaiTokenResponse,
+    ) => Promise<T>,
+): Promise<T> {
+    const { cookie, yomitaiToken } = await ensureSessionAndToken();
+
+    try {
+        return await operation(cookie, yomitaiToken);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // If token expired (Forbidden/Unauthorized), clear token cache and retry
+        if (
+            message.includes("Token expired") ||
+            message.includes("unauthorized") ||
+            message.includes("Forbidden")
+        ) {
+            console.log(
+                "Token expired or forbidden, clearing token cache and retrying",
+            );
+            // Clear token cache
+            clearCache("yomitai-token");
+            // Get fresh session and token
+            const refreshed = await ensureSessionAndToken();
+            // Retry the operation
+            return await operation(refreshed.cookie, refreshed.yomitaiToken);
+        }
+        throw error;
+    }
+}
+
 async function fetchTotalCount({
     cookie,
     yomitaiToken,
@@ -194,6 +281,14 @@ async function fetchBookPage({
         console.error(
             `request headers: ${JSON.stringify(createHeaders({ cookie, yomitaiToken }))}`,
         );
+
+        // If Forbidden or Unauthorized, the token might be expired
+        if (response.status === 403 || response.status === 401) {
+            throw new Error(
+                `Token expired or unauthorized: ${response.statusText}`,
+            );
+        }
+
         throw new Error(
             `Failed to fetch book page ${page}: ${response.statusText}`,
         );
@@ -222,38 +317,22 @@ export async function fetchBookListMetadata(
         return cached;
     }
 
-    // Fetch from API
-    let v = await loadCookies();
-    if (!v || !(await isValidSession(v))) {
-        v = await ensureSession();
-    }
+    // Fetch from API with auto-retry on token expiration
+    return await retryWithTokenRefresh(async (cookie, yomitaiToken) => {
+        const totalCount = await fetchTotalCount({
+            cookie,
+            yomitaiToken,
+            listType,
+        });
+        const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
-    let yomitaiToken: YomitaiTokenResponse;
-    try {
-        yomitaiToken = await fetchYomitaiToken(v.cookies[0]!);
-    } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message.includes("Unauthorized")) {
-            v = await ensureSession();
-            yomitaiToken = await fetchYomitaiToken(v.cookies[0]!);
-        } else {
-            throw error;
-        }
-    }
+        const metadata = { totalCount, totalPages, pageSize: ITEMS_PER_PAGE };
 
-    const totalCount = await fetchTotalCount({
-        cookie: v.cookies[0]!,
-        yomitaiToken,
-        listType,
+        // Store in cache
+        setInCache(cacheKey, metadata);
+
+        return metadata;
     });
-    const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
-
-    const metadata = { totalCount, totalPages, pageSize: ITEMS_PER_PAGE };
-
-    // Store in cache
-    setInCache(cacheKey, metadata);
-
-    return metadata;
 }
 
 /**
@@ -263,29 +342,14 @@ export async function fetchBookListPage(
     listType: ListType,
     page: number,
 ): Promise<BookElement[]> {
-    let v = await loadCookies();
-    if (!v || !(await isValidSession(v))) {
-        v = await ensureSession();
-    }
-
-    let yomitaiToken: YomitaiTokenResponse;
-    try {
-        yomitaiToken = await fetchYomitaiToken(v.cookies[0]!);
-    } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message.includes("Unauthorized")) {
-            v = await ensureSession();
-            yomitaiToken = await fetchYomitaiToken(v.cookies[0]!);
-        } else {
-            throw error;
-        }
-    }
-
-    return await fetchBookPage({
-        cookie: v.cookies[0]!,
-        yomitaiToken,
-        listType,
-        page,
+    // Fetch from API with auto-retry on token expiration
+    return await retryWithTokenRefresh(async (cookie, yomitaiToken) => {
+        return await fetchBookPage({
+            cookie,
+            yomitaiToken,
+            listType,
+            page,
+        });
     });
 }
 
