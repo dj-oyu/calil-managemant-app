@@ -647,7 +647,7 @@ describe("Caching Behavior", () => {
 
             const text = await res.text();
             const lines = text.trim().split("\n");
-            const metaMessage = JSON.parse(lines[0]);
+            const metaMessage = JSON.parse(lines[0]!);
 
             expect(metaMessage.type).toBe("meta");
             expect(metaMessage.totalCount).toBeDefined();

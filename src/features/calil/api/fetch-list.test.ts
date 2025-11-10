@@ -140,29 +140,6 @@ describe('fetch-list utilities', () => {
     });
   });
 
-  describe('ListType validation', () => {
-    test('有効なListType: wish', () => {
-      const listType = 'wish';
-      const isValid = listType === 'wish' || listType === 'read';
-
-      expect(isValid).toBe(true);
-    });
-
-    test('有効なListType: read', () => {
-      const listType = 'read';
-      const isValid = listType === 'wish' || listType === 'read';
-
-      expect(isValid).toBe(true);
-    });
-
-    test('無効なListType', () => {
-      const listType = 'invalid';
-      const isValid = listType === 'wish' || listType === 'read';
-
-      expect(isValid).toBe(false);
-    });
-  });
-
   describe('Base URL and constants', () => {
     test('BASE_URLが正しい形式である', () => {
       const baseUrl = 'https://calil.jp';
