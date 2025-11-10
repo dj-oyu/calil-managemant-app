@@ -486,11 +486,8 @@ const AsyncBookList = async ({ listType }: { listType: "wish" | "read" }) => {
 
 // タブカウントを取得する軽量な非同期コンポーネント
 const AsyncTabCount = async ({ listType }: { listType: "wish" | "read" }) => {
-    const bookData = await fetchBookList(listType);
-    const books = (
-        typeof bookData === "string" ? JSON.parse(bookData) : bookData
-    ) as Book[];
-    return <>{books.length}</>;
+    const metadata = await fetchBookListMetadata(listType);
+    return <>{metadata.totalCount}</>;
 };
 
 // Suspense対応のストリーミングページコンポーネント（アクティブなタブのみ読み込み）
