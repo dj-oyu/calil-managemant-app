@@ -11,6 +11,9 @@ const PROFILE = appPaths.browserProfile; // セッション持続
 let cachedBrowser: Browser | null = null;
 let browserLaunchPromise: Promise<Browser> | null = null;
 
+// Singleton login process
+let loginPromise: Promise<any[]> | null = null;
+
 async function saveEndpoint(ws: string) {
     await ensureDir(appPaths.vaultDir);
     await fs.writeFile(ENDPOINT_FILE, ws, 'utf8');
@@ -100,35 +103,54 @@ async function getBrowserInstance(opts?: { headless?: boolean }): Promise<Browse
 }
 
 export async function oauthLoginAndGetCookies(opts?: { headless?: boolean }) {
-    const browser = await getBrowserInstance(opts);
-    const page = await browser.newPage();
+    // If a login is already in progress, wait for it
+    if (loginPromise) {
+        logger.debug('Login already in progress, waiting for completion...');
+        return await loginPromise;
+    }
+
+    // Perform the actual login
+    const performLogin = async () => {
+        const browser = await getBrowserInstance(opts);
+        const page = await browser.newPage();
+
+        try {
+            logger.info('Starting OAuth login process');
+            await page.setUserAgent(
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ' +
+                'Chrome/129.0.0.0 Safari/537.36'
+            );
+            await page.evaluateOnNewDocument(() => {
+                Object.defineProperty(navigator, 'webdriver', { get: () => false });
+            });
+
+            await page.goto('https://login.calil.jp/google_login?redirect=%2F', { waitUntil: 'networkidle2' });
+
+            // 1回目は手動で"Allow"。2回目以降はプロファイルにより自動通過しやすい
+            await page.waitForFunction(
+                () => location.hostname.endsWith('calil.jp') && location.pathname === '/',
+                { timeout: 180_000 }
+            );
+
+            const all_cookies = await browser.cookies();
+            const cookies = [
+                ...(all_cookies.filter(c => c.domain.endsWith('calil.jp'))),
+                ...(all_cookies.filter(c => c.path.startsWith('https://login.calil.jp'))),
+            ];
+
+            logger.info('OAuth login completed successfully');
+            return cookies;
+        } finally {
+            // Close only the page, keep browser running for reuse
+            await page.close();
+        }
+    };
 
     try {
-        await page.setUserAgent(
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ' +
-            'Chrome/129.0.0.0 Safari/537.36'
-        );
-        await page.evaluateOnNewDocument(() => {
-            Object.defineProperty(navigator, 'webdriver', { get: () => false });
-        });
-
-        await page.goto('https://login.calil.jp/google_login?redirect=%2F', { waitUntil: 'networkidle2' });
-
-        // 1回目は手動で"Allow"。2回目以降はプロファイルにより自動通過しやすい
-        await page.waitForFunction(
-            () => location.hostname.endsWith('calil.jp') && location.pathname === '/',
-            { timeout: 180_000 }
-        );
-
-        const all_cookies = await browser.cookies();
-        const cookies = [
-            ...(all_cookies.filter(c => c.domain.endsWith('calil.jp'))),
-            ...(all_cookies.filter(c => c.path.startsWith('https://login.calil.jp'))),
-        ];
-
-        return cookies;
+        loginPromise = performLogin();
+        const result = await loginPromise;
+        return result;
     } finally {
-        // Close only the page, keep browser running for reuse
-        await page.close();
+        loginPromise = null;
     }
 }
