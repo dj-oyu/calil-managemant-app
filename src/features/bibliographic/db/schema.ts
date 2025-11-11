@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { getAppDataDir } from "../../../shared/config/app-paths";
+import { appRoot } from "../../../shared/config/app-paths";
 import path from "node:path";
 
 export type BibliographicRecord = {
@@ -31,8 +31,7 @@ let dbInstance: Database | null = null;
  */
 export function getDatabase(): Database {
     if (!dbInstance) {
-        const appDataDir = getAppDataDir();
-        const dbPath = path.join(appDataDir, "bibliographic.db");
+        const dbPath = path.join(appRoot, "bibliographic.db");
 
         dbInstance = new Database(dbPath, { create: true });
         initializeDatabase(dbInstance);
