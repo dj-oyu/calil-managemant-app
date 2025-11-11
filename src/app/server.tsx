@@ -106,6 +106,26 @@ logger.info("Path resolution initialized", {
     importMetaPath: import.meta.path,
 });
 
+// Faviconを配信
+app.get("/favicon.ico", async (c) => {
+    const faviconUrl = new URL("./favicon.ico", moduleDir);
+    const file = Bun.file(faviconUrl);
+
+    if (!(await file.exists())) {
+        logger.debug("Favicon not found", { faviconUrl: faviconUrl.href });
+        return c.notFound();
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    return new Response(arrayBuffer, {
+        status: 200,
+        headers: {
+            "Content-Type": "image/x-icon",
+            "Cache-Control": "public, max-age=86400", // 24 hours
+        },
+    });
+});
+
 // CSSファイルを配信
 app.get("/public/styles/:filename{.+\\.css$}", async (c) => {
     const filename = c.req.param("filename");
