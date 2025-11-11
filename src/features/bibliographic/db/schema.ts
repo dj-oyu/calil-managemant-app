@@ -1,7 +1,9 @@
 import { Database } from "bun:sqlite";
+import { existsSync, unlinkSync } from "node:fs";
 import { appRoot } from "../../../shared/config/app-paths";
 import path from "node:path";
-import { runMigrations } from "./migrations";
+import { runMigrations, getCurrentVersion, migrations } from "./migrations";
+import { logger } from "../../../shared/logging/logger";
 
 export type BibliographicRecord = {
     isbn: string;
@@ -48,11 +50,76 @@ export type SearchOptions = {
 let dbInstance: Database | null = null;
 
 /**
+ * Expected schema version (should match the latest migration version)
+ */
+const EXPECTED_SCHEMA_VERSION = migrations.length > 0
+    ? Math.max(...migrations.map(m => m.version))
+    : 0;
+
+/**
+ * Check if database schema is outdated and needs reset
+ */
+function shouldResetDatabase(dbPath: string): boolean {
+    if (!existsSync(dbPath)) {
+        return false; // New database, no reset needed
+    }
+
+    try {
+        // Open database temporarily to check version
+        const tempDb = new Database(dbPath, { readonly: true });
+        const currentVersion = getCurrentVersion(tempDb);
+        tempDb.close();
+
+        // Reset if current version is less than expected
+        if (currentVersion < EXPECTED_SCHEMA_VERSION) {
+            logger.info("Database schema is outdated, will reset", {
+                currentVersion,
+                expectedVersion: EXPECTED_SCHEMA_VERSION,
+            });
+            return true;
+        }
+
+        return false;
+    } catch (error) {
+        // If we can't read the database, reset it
+        logger.warn("Failed to check database version, will reset", {
+            error: String(error),
+        });
+        return true;
+    }
+}
+
+/**
+ * Reset database by deleting the file
+ */
+function resetDatabase(dbPath: string): void {
+    try {
+        if (existsSync(dbPath)) {
+            unlinkSync(dbPath);
+            logger.info("Database file deleted for reset", { path: dbPath });
+        }
+    } catch (error) {
+        logger.error("Failed to delete database file", {
+            path: dbPath,
+            error: String(error),
+        });
+        throw error;
+    }
+}
+
+/**
  * Get or create database instance (singleton)
+ * Automatically resets database if schema is outdated
  */
 export function getDatabase(): Database {
     if (!dbInstance) {
         const dbPath = path.join(appRoot, "bibliographic.db");
+
+        // Check if database needs reset due to outdated schema
+        if (shouldResetDatabase(dbPath)) {
+            logger.info("Resetting database due to schema changes");
+            resetDatabase(dbPath);
+        }
 
         dbInstance = new Database(dbPath, { create: true });
         initializeDatabase(dbInstance);
