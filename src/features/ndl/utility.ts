@@ -77,9 +77,9 @@ export const NDLsearch = async (
     // Save to cache if DB functions are provided and data is valid
     if (db && upsertBibliographicInfo && result.items && result.items[0]) {
         const item = result.items[0];
-        if (item.isbn13 && item.title) {
+        if (item.title) {
             const bibInfo: BibliographicInfo = {
-                isbn: item.isbn13,
+                isbn: isbn, // Use request ISBN as cache key, not item.isbn13
                 title: item.title,
                 title_kana: item.titleKana,
                 authors: item.creators,
