@@ -75,7 +75,8 @@ await loadEmbeddedClientJs();
 
 // Define module directory URL for path resolution (from PR #2)
 // Detect if running as a compiled binary
-const isCompiledBinary = Bun.main !== import.meta.path;
+// In development mode, always treat as non-compiled even if Bun.main differs (due to index.tsx wrapper)
+const isCompiledBinary = !isDevelopment && Bun.main !== import.meta.path;
 
 const moduleDir = (() => {
     if (isCompiledBinary) {
@@ -109,12 +110,15 @@ logger.info("Path resolution initialized", {
 app.get("/public/styles/:filename{.+\\.css$}", async (c) => {
     const filename = c.req.param("filename");
 
-    // Try embedded CSS first (for compiled binaries)
-    const embeddedContent = embeddedCss[filename];
-    if (embeddedContent) {
-        logger.debug("Serving embedded CSS", { filename });
-        const headers = getCacheHeaders("text/css; charset=utf-8", 86400); // 24時間
-        return c.text(embeddedContent, 200, headers);
+    // Skip embedded CSS in development mode
+    if (!isDevelopment) {
+        // Try embedded CSS first (for compiled binaries)
+        const embeddedContent = embeddedCss[filename];
+        if (embeddedContent) {
+            logger.debug("Serving embedded CSS", { filename });
+            const headers = getCacheHeaders("text/css; charset=utf-8", 86400); // 24時間
+            return c.text(embeddedContent, 200, headers);
+        }
     }
 
     // Fall back to file system (for development or if file not embedded)
@@ -124,7 +128,6 @@ app.get("/public/styles/:filename{.+\\.css$}", async (c) => {
         logger.warn("CSS file not found", {
             cssUrl: cssUrl.href,
             filename,
-            hasEmbedded: !!embeddedContent,
         });
         return c.text("Not Found", 404);
     }
@@ -138,15 +141,17 @@ app.get("/public/styles/:filename{.+\\.css$}", async (c) => {
 app.get("/public/:path{.+\\.js$}", async (c) => {
     const path = c.req.param("path");
 
-    // Try embedded JavaScript first (for compiled binaries)
-    const embeddedJs = getEmbeddedClientJs(path);
-    if (embeddedJs) {
-        logger.debug("Serving embedded JavaScript", { path });
-        const headers = getCacheHeaders(
-            "application/javascript; charset=utf-8",
-            31536000,
-        ); // 1年
-        return c.text(embeddedJs, 200, headers);
+    // Skip embedded JavaScript in development mode
+    if (!isDevelopment) {
+        // Try embedded JavaScript first (for compiled binaries)
+        const embeddedJs = getEmbeddedClientJs(path);
+        if (embeddedJs) {
+            logger.debug("Serving embedded JavaScript", { path });
+            const headers = getCacheHeaders(
+                "application/javascript; charset=utf-8",
+            );
+            return c.text(embeddedJs, 200, headers);
+        }
     }
 
     // Fall back to dynamic transpilation (for development)
@@ -179,34 +184,45 @@ app.get("/public/:path{.+\\.js$}", async (c) => {
     }
 
     try {
+        // Use Bun.build for both dev and production (required for module resolution)
+        // Development: No minification, no splitting
+        // Production: Full optimizations
         const transpiled = await Bun.build({
             entrypoints: [tsUrl.pathname],
             target: "browser",
-            minify: false,
+            minify: isDevelopment
+                ? false
+                : {
+                      whitespace: true,
+                      identifiers: true,
+                      syntax: true,
+                  },
+            splitting: !isDevelopment, // Only split in production
+            sourcemap: isDevelopment ? "inline" : "none",
         });
 
-        if (transpiled.success && transpiled.outputs[0]) {
-            const jsCode = await transpiled.outputs[0].text();
-            logger.info("Transpiled successfully", {
+        if (!transpiled.success || !transpiled.outputs[0]) {
+            logger.error("Transpilation failed", {
                 path,
-                tsPath: tsUrl.pathname,
-                size: jsCode.length,
-                outputCount: transpiled.outputs.length,
+                tsUrl: tsUrl.href,
+                success: transpiled.success,
+                logs: transpiled.logs,
             });
-            const headers = getCacheHeaders(
-                "application/javascript; charset=utf-8",
-                31536000,
-            ); // 1年
-            return c.text(jsCode, 200, headers);
+            return c.text("Transpilation Error", 500);
         }
 
-        logger.error("Transpilation failed", {
+        const jsCode = await transpiled.outputs[0].text();
+
+        logger.info("Transpiled successfully", {
             path,
-            tsUrl: tsUrl.href,
-            success: transpiled.success,
-            logs: transpiled.logs,
+            size: jsCode.length,
+            isDevelopment,
         });
-        return c.text("Transpilation Error", 500);
+
+        const headers = getCacheHeaders(
+            "application/javascript; charset=utf-8",
+        );
+        return c.text(jsCode, 200, headers);
     } catch (error) {
         logger.error("Error transpiling TypeScript", {
             path,

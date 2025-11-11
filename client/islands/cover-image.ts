@@ -82,24 +82,12 @@ export class CoverImageIsland extends Island {
     private static loadNotFoundCache(): void {
         try {
             const cached = localStorage.getItem(this.NOT_FOUND_CACHE_KEY);
-            logger.debug(`📷 [CACHE] Loading 404 cache from localStorage...`, {
-                raw: cached,
-            });
             if (cached) {
                 const data = JSON.parse(cached);
                 this.notFoundCovers = new Set(data);
-                logger.info(
-                    `📷 [CACHE] Loaded ${this.notFoundCovers.size} 404 entries:`,
-                    Array.from(this.notFoundCovers),
-                );
-            } else {
-                logger.debug(`📷 [CACHE] No 404 cache found in localStorage`);
             }
         } catch (error) {
-            logger.warn(
-                "📷 [CACHE] Failed to load 404 cache from localStorage",
-                error,
-            );
+            logger.warn("📷 Failed to load 404 cache from localStorage", error);
             // Ensure notFoundCovers is initialized even on error
             this.notFoundCovers = new Set();
         }
@@ -132,19 +120,11 @@ export class CoverImageIsland extends Island {
      * Should only be called once during application initialization.
      */
     static initializeObserver(maxConcurrent?: number): void {
-        logger.debug(`📷 [INIT] initializeObserver called`, {
-            hasObserver: !!this.observer,
-            notFoundCount: this.notFoundCovers.size,
-        });
-
         // Load 404 cache from localStorage FIRST (before observer check)
         // This ensures cache is always up-to-date on tab switches
         this.loadNotFoundCache();
 
         if (this.observer) {
-            logger.debug(
-                `📷 [INIT] Observer already exists, skipping creation`,
-            );
             return;
         }
 
@@ -152,7 +132,6 @@ export class CoverImageIsland extends Island {
             this.maxConcurrent = maxConcurrent;
         }
 
-        logger.info(`📷 [INIT] Creating new IntersectionObserver`);
         this.observer = new IntersectionObserver(
             (entries) => {
                 entries.forEach((entry) => {
@@ -168,13 +147,6 @@ export class CoverImageIsland extends Island {
                             const in404Cache = this.notFoundCovers.has(
                                 island.isbn,
                             );
-
-                            logger.debug(`📷 [OBSERVER] Element visible:`, {
-                                isbn: island.isbn,
-                                inLoadedCache,
-                                in404Cache,
-                                willEnqueue: !inLoadedCache && !in404Cache,
-                            });
 
                             if (!inLoadedCache && !in404Cache) {
                                 this.enqueueLoad(island);
@@ -206,10 +178,6 @@ export class CoverImageIsland extends Island {
             // ISBN is known to not have a cover, apply error class immediately
             this.root.classList.add(CoverImageIsland.ERROR_CLASS);
             this.markHydrated();
-            logger.debug(
-                "📷 CoverImageIsland skipped (404 cached):",
-                this.isbn,
-            );
             return;
         }
 
@@ -222,7 +190,6 @@ export class CoverImageIsland extends Island {
         }
 
         this.markHydrated();
-        logger.info("📷 CoverImageIsland hydrated:", this.isbn);
     }
 
     /**
@@ -233,11 +200,6 @@ export class CoverImageIsland extends Island {
      * @private
      */
     private static enqueueLoad(island: CoverImageIsland): void {
-        logger.debug(`📷 [QUEUE] Enqueuing:`, {
-            isbn: island.isbn,
-            queueLength: this.loadQueue.length,
-            activeRequests: this.activeRequests,
-        });
         this.loadQueue.push(island);
         this.processQueue();
     }
@@ -269,17 +231,10 @@ export class CoverImageIsland extends Island {
      * @returns Promise that resolves when loading is complete (success or error)
      */
     private async loadCover(): Promise<void> {
-        logger.debug(`📷 [LOAD] loadCover called:`, {
-            isbn: this.isbn,
-            inLoadedCache: CoverImageIsland.loadedCovers.has(this.isbn),
-            in404Cache: CoverImageIsland.notFoundCovers.has(this.isbn),
-        });
-
         if (
             CoverImageIsland.loadedCovers.has(this.isbn) ||
             CoverImageIsland.notFoundCovers.has(this.isbn)
         ) {
-            logger.debug(`📷 [LOAD] Skipped (already processed):`, this.isbn);
             return;
         }
 
@@ -287,7 +242,6 @@ export class CoverImageIsland extends Island {
         this.root.classList.add(CoverImageIsland.LOADING_CLASS);
         CoverImageIsland.loadedCovers.add(this.isbn);
 
-        logger.info(`📷 [LOAD] Fetching cover:`, this.isbn);
         try {
             const response = await fetch(`/api/cover/${this.isbn}`);
 
@@ -311,16 +265,16 @@ export class CoverImageIsland extends Island {
                 };
             } else if (response.status === 404) {
                 // 404: Cover doesn't exist - add to persistent cache
-                logger.debug(
-                    `📷 Cover not found for ISBN ${this.isbn}, adding to 404 cache`,
-                );
                 this.handleError(true);
             } else {
                 // Other errors: Don't cache, might be temporary
                 this.handleError(false);
             }
         } catch (error) {
-            logger.error(`Failed to load cover for ISBN ${this.isbn}`, error);
+            logger.error(
+                `📷 Failed to load cover for ISBN ${this.isbn}`,
+                error,
+            );
             this.handleError(false);
         } finally {
             CoverImageIsland.activeRequests--;
