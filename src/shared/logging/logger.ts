@@ -1,8 +1,8 @@
 // Centralized logging system with in-memory storage
 
-type LogLevel = 'info' | 'warn' | 'error' | 'debug';
+export type LogLevel = 'info' | 'warn' | 'error' | 'debug';
 
-interface LogEntry {
+export interface LogEntry {
     timestamp: Date;
     level: LogLevel;
     message: string;
