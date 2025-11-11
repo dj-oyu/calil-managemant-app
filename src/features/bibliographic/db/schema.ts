@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { appRoot } from "../../../shared/config/app-paths";
 import path from "node:path";
+import { runMigrations } from "./migrations";
 
 export type BibliographicRecord = {
     isbn: string;
@@ -64,6 +65,8 @@ export function getDatabase(): Database {
  */
 function initializeDatabase(db: Database): void {
     // Create bibliographic_info table with search-optimized columns
+    // Note: This creates the table with all columns including description
+    // For existing databases, migrations will add missing columns
     db.run(`
         CREATE TABLE IF NOT EXISTS bibliographic_info (
             isbn TEXT PRIMARY KEY,
@@ -81,12 +84,8 @@ function initializeDatabase(db: Database): void {
         )
     `);
 
-    // Add description column to existing tables (migration)
-    try {
-        db.run(`ALTER TABLE bibliographic_info ADD COLUMN description TEXT`);
-    } catch {
-        // Column already exists, ignore error
-    }
+    // Run database migrations for existing tables
+    runMigrations(db);
 
     // Create indexes for efficient searching
     db.run(`
