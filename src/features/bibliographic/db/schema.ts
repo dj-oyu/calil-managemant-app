@@ -78,6 +78,25 @@ function initializeDatabase(db: Database): void {
         )
     `);
 
+    // Migrate existing tables: Add new columns if they don't exist
+    try {
+        // Check if title_kana column exists
+        const tableInfo = db.prepare("PRAGMA table_info(bibliographic_info)").all() as Array<{ name: string }>;
+        const columnNames = tableInfo.map(col => col.name);
+
+        if (!columnNames.includes('title_kana')) {
+            console.log("Migrating database: Adding title_kana column");
+            db.run(`ALTER TABLE bibliographic_info ADD COLUMN title_kana TEXT`);
+        }
+
+        if (!columnNames.includes('authors_kana')) {
+            console.log("Migrating database: Adding authors_kana column");
+            db.run(`ALTER TABLE bibliographic_info ADD COLUMN authors_kana TEXT`);
+        }
+    } catch (error) {
+        console.error("Migration error:", error);
+    }
+
     // Create indexes for efficient searching
     db.run(`
         CREATE INDEX IF NOT EXISTS idx_bibliographic_updated_at
@@ -111,6 +130,19 @@ function initializeDatabase(db: Database): void {
 
     // Create FTS5 virtual table for full-text search
     // Using unicode61 tokenizer with remove_diacritics for better Japanese support
+    // Drop and recreate if schema changed
+    try {
+        // Check if FTS table exists and needs migration
+        const ftsTableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='bibliographic_fts'").get() as { sql: string } | undefined;
+
+        if (ftsTableInfo && (!ftsTableInfo.sql.includes('title_kana') || !ftsTableInfo.sql.includes('authors_kana'))) {
+            console.log("Migrating FTS table: Dropping old version");
+            db.run(`DROP TABLE IF EXISTS bibliographic_fts`);
+        }
+    } catch (error) {
+        console.error("FTS migration check error:", error);
+    }
+
     db.run(`
         CREATE VIRTUAL TABLE IF NOT EXISTS bibliographic_fts USING fts5(
             isbn UNINDEXED,
@@ -126,8 +158,13 @@ function initializeDatabase(db: Database): void {
     `);
 
     // Create triggers to keep FTS table in sync
+    // Drop old triggers first to ensure they match new schema
+    db.run(`DROP TRIGGER IF EXISTS bibliographic_fts_insert`);
+    db.run(`DROP TRIGGER IF EXISTS bibliographic_fts_delete`);
+    db.run(`DROP TRIGGER IF EXISTS bibliographic_fts_update`);
+
     db.run(`
-        CREATE TRIGGER IF NOT EXISTS bibliographic_fts_insert
+        CREATE TRIGGER bibliographic_fts_insert
         AFTER INSERT ON bibliographic_info BEGIN
             INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
             VALUES (new.rowid, new.isbn, new.title, new.title_kana, new.authors, new.authors_kana, new.publisher);
@@ -135,14 +172,14 @@ function initializeDatabase(db: Database): void {
     `);
 
     db.run(`
-        CREATE TRIGGER IF NOT EXISTS bibliographic_fts_delete
+        CREATE TRIGGER bibliographic_fts_delete
         AFTER DELETE ON bibliographic_info BEGIN
             DELETE FROM bibliographic_fts WHERE rowid = old.rowid;
         END
     `);
 
     db.run(`
-        CREATE TRIGGER IF NOT EXISTS bibliographic_fts_update
+        CREATE TRIGGER bibliographic_fts_update
         AFTER UPDATE ON bibliographic_info BEGIN
             DELETE FROM bibliographic_fts WHERE rowid = old.rowid;
             INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
@@ -150,11 +187,21 @@ function initializeDatabase(db: Database): void {
         END
     `);
 
-    // Rebuild FTS index if needed
+    // Rebuild FTS index from existing data
     try {
-        db.run(`INSERT INTO bibliographic_fts(bibliographic_fts) VALUES('rebuild')`);
+        // First, clear the FTS table
+        db.run(`DELETE FROM bibliographic_fts`);
+
+        // Then, repopulate it with existing data
+        db.run(`
+            INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
+            SELECT rowid, isbn, title, title_kana, authors, authors_kana, publisher
+            FROM bibliographic_info
+        `);
+
+        console.log("FTS index rebuilt successfully");
     } catch (error) {
-        // Ignore error if already populated or not needed
+        console.error("FTS rebuild error:", error);
     }
 
     console.log("Bibliographic database initialized with search support");
