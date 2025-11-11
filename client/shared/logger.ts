@@ -1,70 +1,46 @@
-/**
- * Client-side logger with environment-aware log levels
- *
- * Features:
- * - Development: All logs (debug, info, warn, error)
- * - Production: Errors and warnings only
- * - Consistent formatting with emoji prefixes
- * - Type-safe logging methods
- *
- * @example
- * ```typescript
- * import { logger } from './shared/logger';
- *
- * logger.debug('Detailed debug info', { data });
- * logger.info('User action', { action });
- * logger.warn('Potential issue', { issue });
- * logger.error('Error occurred', { error });
- * ```
- */
+import {
+    type BaseLoggerConfig,
+    formatTimestamp,
+    LEVEL_ICONS,
+    LEVEL_TO_CONSOLE_METHOD,
+    type LogLevel,
+    shouldLog,
+} from '../../src/shared/logging/common';
 
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-
-interface LoggerConfig {
-    /** Current environment */
+interface LoggerConfig extends BaseLoggerConfig {
     environment: 'development' | 'production';
-    /** Minimum log level to display */
-    minLevel: LogLevel;
 }
 
 class Logger {
     private config: LoggerConfig;
-    private readonly levels: Record<LogLevel, number> = {
-        debug: 0,
-        info: 1,
-        warn: 2,
-        error: 3,
-    };
 
     constructor() {
-        // Get environment from meta tag
-        const envMeta = document.querySelector('meta[name="app-environment"]');
-        const environment = (envMeta?.getAttribute('content') || 'development') as 'development' | 'production';
+            // Get environment from meta tag
+            const envMeta = document.querySelector('meta[name="app-environment"]');
+            const environment = (envMeta?.getAttribute('content') || 'development') as 'development' | 'production';
 
-        this.config = {
-            environment,
-            minLevel: environment === 'production' ? 'warn' : 'debug',
-        };
+            this.config = {
+                environment,
+                minLevel: environment === 'production' ? 'warn' : 'debug',
+            };
 
-        // Log initialization in development only
-        if (this.shouldLog('info')) {
-            console.info(`🔧 Logger initialized: ${environment} mode (min level: ${this.config.minLevel})`);
+            // Log initialization in development only
+            if (shouldLog('info', this.config.minLevel)) {
+                console.info(`🔧 Logger initialized: ${environment} mode (min level: ${this.config.minLevel})`);
+            }
         }
-    }
-
-    /**
-     * Check if log level should be displayed
-     */
-    private shouldLog(level: LogLevel): boolean {
-        return this.levels[level] >= this.levels[this.config.minLevel];
-    }
 
     /**
      * Format log message with timestamp
      */
     private formatMessage(level: LogLevel, message: string): string {
-        const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+        const timestamp = formatTimestamp();
         return `[${timestamp}] ${message}`;
+    }
+
+    private emit(level: LogLevel, message: string, args: unknown[]): void {
+        const method = LEVEL_TO_CONSOLE_METHOD[level];
+        (console[method] as typeof console.log)(this.formatMessage(level, message), ...args);
     }
 
     /**
@@ -72,8 +48,8 @@ class Logger {
      * Use for detailed information useful during development
      */
     debug(message: string, ...args: any[]): void {
-        if (this.shouldLog('debug')) {
-            console.log(this.formatMessage('debug', message), ...args);
+        if (shouldLog('debug', this.config.minLevel)) {
+            this.emit('debug', message, args);
         }
     }
 
@@ -82,8 +58,8 @@ class Logger {
      * Use for general informational messages
      */
     info(message: string, ...args: any[]): void {
-        if (this.shouldLog('info')) {
-            console.info(this.formatMessage('info', message), ...args);
+        if (shouldLog('info', this.config.minLevel)) {
+            this.emit('info', message, args);
         }
     }
 
@@ -92,8 +68,8 @@ class Logger {
      * Use for potentially harmful situations
      */
     warn(message: string, ...args: any[]): void {
-        if (this.shouldLog('warn')) {
-            console.warn(this.formatMessage('warn', `⚠️ ${message}`), ...args);
+        if (shouldLog('warn', this.config.minLevel)) {
+            this.emit('warn', `${LEVEL_ICONS.warn} ${message}`, args);
         }
     }
 
@@ -102,21 +78,24 @@ class Logger {
      * Use for error events that might still allow the app to continue
      */
     error(message: string, error?: Error | unknown, ...args: any[]): void {
-        if (this.shouldLog('error')) {
-            const formattedMsg = this.formatMessage('error', `❌ ${message}`);
+        if (!shouldLog('error', this.config.minLevel)) {
+            return;
+        }
 
-            if (error instanceof Error) {
-                console.error(formattedMsg, {
+        const formattedMsg = `${LEVEL_ICONS.error} ${message}`;
+        if (error instanceof Error) {
+            this.emit('error', formattedMsg, [
+                {
                     message: error.message,
                     stack: error.stack,
                     name: error.name,
                     ...args,
-                });
-            } else if (error !== undefined) {
-                console.error(formattedMsg, error, ...args);
-            } else {
-                console.error(formattedMsg, ...args);
-            }
+                },
+            ]);
+        } else if (error !== undefined) {
+            this.emit('error', formattedMsg, [error, ...args]);
+        } else {
+            this.emit('error', formattedMsg, args);
         }
     }
 

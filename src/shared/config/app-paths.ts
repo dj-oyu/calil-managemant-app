@@ -1,33 +1,13 @@
-import os from 'node:os';
 import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
+import { resolveAppRoot } from './path-utils';
 
 export const appDirectoryName =
     process.env.CALIL_APP_DIR_NAME ?? 'Calil-management-app';
 
 export const appRoot =
     process.env.CALIL_APP_ROOT ??
-    (() => {
-        if (process.platform === 'win32') {
-            const base =
-                process.env.LOCALAPPDATA ??
-                path.join(os.homedir(), 'AppData', 'Local');
-            return path.join(base, appDirectoryName);
-        }
-
-        if (process.platform === 'darwin') {
-            return path.join(
-                os.homedir(),
-                'Library',
-                'Application Support',
-                appDirectoryName
-            );
-        }
-
-        const xdgData = process.env.XDG_DATA_HOME;
-        const base = xdgData ?? path.join(os.homedir(), '.local', 'share');
-        return path.join(base, appDirectoryName);
-    })();
+    resolveAppRoot({ appDirectoryName });
 
 export const appPaths = {
     root: appRoot,

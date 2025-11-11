@@ -1,45 +1,17 @@
 import { Hono } from "hono";
-import { type FC } from "hono/jsx";
-import { renderToReadableStream, Suspense } from "hono/jsx/streaming";
-import { raw } from "hono/html";
 import { serve } from "@hono/node-server";
 import { authRoutes } from "./routes/auth.routes";
-import {
-    fetchBookList,
-    fetchBookListMetadata,
-    fetchBookListPage,
-} from "../features/calil/api/fetch-list";
-import {
-    convertISBN10to13,
-    NDLsearch,
-    type NdlItem,
-} from "../features/ndl/utility";
 import { logger } from "../shared/logging/logger";
-import { initCoverCache, getCoverImage } from "../features/covers/server/cache";
+import { initCoverCache } from "../features/covers/server/cache";
 import {
-    embeddedCss,
     loadEmbeddedClientJs,
-    getEmbeddedClientJs,
 } from "./embedded-assets";
 import {
     getDatabase,
-    upsertBibliographicInfo,
-    getBibliographicInfo,
-    getBibliographicInfoBatch,
-    searchBibliographic,
-    countSearchResults,
-    getAllNDC10Classifications,
-    getAllNDLCClassifications,
-    getAllPublishers,
     type BibliographicInfo,
-    type SearchOptions,
 } from "../features/bibliographic/db/schema";
 import { NODE_ENV, isDevelopment } from "./utils/environment";
-import { getCacheHeaders } from "./utils/cache-headers";
 import { getModuleDir, isCompiledBinary } from "./utils/path-resolution";
-import { BookCard, BookDetail } from "./components/books";
-import { StreamingBookListPage } from "./components/pages/StreamingBookListPage";
-import type { Book } from "../features/calil/types/book";
 import { logRoutes } from "./routes/log.routes";
 import { coverRoutes } from "./routes/cover.routes";
 import { booksRoutes } from "./routes/books.routes";
@@ -64,7 +36,7 @@ await initCoverCache();
 await loadEmbeddedClientJs();
 
 // Initialize bibliographic database
-const db = getDatabase();
+getDatabase();
 logger.info("Bibliographic database initialized");
 
 logger.info("Path resolution initialized", {

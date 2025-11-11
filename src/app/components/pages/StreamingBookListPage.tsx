@@ -112,7 +112,7 @@ export const StreamingBookListPage: FC<{ activeTab?: "wish" | "read" }> = ({
                     data-loaded={activeTab === "read" ? "true" : "false"}
                 >
                     {activeTab === "read" ? (
-                        <Suspense fallback={<BookListSkeleton count={2} />}>
+                        <Suspense fallback={<BookListSkeleton count={5} />}>
                             <AsyncBookList listType="read" />
                         </Suspense>
                     ) : (

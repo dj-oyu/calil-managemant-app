@@ -1,3 +1,4 @@
+import { getExecutableDirectory, toDirectoryFileUrl } from "../../shared/config/path-utils";
 import { isDevelopment } from "./environment";
 
 /**
@@ -19,18 +20,8 @@ export const isCompiledBinary = !isDevelopment && Bun.main !== import.meta.path;
 export function getModuleDir(importMetaUrl: string): URL {
     if (isCompiledBinary) {
         // When compiled, use the executable directory
-        const exePath = Bun.main;
-        // Handle both Unix and Windows paths
-        const separator = exePath.includes("\\") ? "\\" : "/";
-        const lastSepIndex = exePath.lastIndexOf(separator);
-        const exeDir = exePath.substring(0, lastSepIndex + 1);
-        // Ensure proper file:// URL format
-        const normalizedPath = exeDir.replace(/\\/g, "/");
-        return new URL(
-            normalizedPath.startsWith("file://")
-                ? normalizedPath
-                : `file://${normalizedPath}`,
-        );
+        const exeDir = getExecutableDirectory(Bun.main);
+        return toDirectoryFileUrl(exeDir);
     } else {
         // In development, use the module directory
         return new URL(".", importMetaUrl);

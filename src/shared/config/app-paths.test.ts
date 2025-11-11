@@ -1,6 +1,6 @@
 import { test, expect, describe } from 'bun:test';
 import path from 'node:path';
-import os from 'node:os';
+import { resolveAppRoot } from './path-utils';
 
 /**
  * app-paths.tsのテスト
@@ -12,23 +12,21 @@ import os from 'node:os';
 describe('App Paths', () => {
   describe('appRoot計算ロジック', () => {
     test('Windows環境でのパス生成ロジック', () => {
-      // Windowsプラットフォームのシミュレーション
       const platform = 'win32';
       const appDirectoryName = 'Calil-management-app';
       const localAppData = 'C:\\Users\\Test\\AppData\\Local';
 
-      let appRoot: string;
-      if (platform === 'win32') {
-        appRoot = path.join(localAppData, appDirectoryName);
-      } else {
-        appRoot = '';
-      }
+      const appRoot = resolveAppRoot({
+        platform,
+        env: {
+          LOCALAPPDATA: localAppData,
+          CALIL_APP_DIR_NAME: appDirectoryName,
+        } as NodeJS.ProcessEnv,
+        homedir: 'C:\\Users\\Test',
+        appDirectoryName,
+      });
 
-      // path.joinは現在のOS環境の区切り文字を使用するため、
-      // OS非依存のアサーションを使用
-      expect(appRoot).toContain('Local');
-      expect(appRoot).toContain('Calil-management-app');
-      expect(appRoot.endsWith('Calil-management-app')).toBe(true);
+      expect(appRoot).toBe(path.join(localAppData, appDirectoryName));
     });
 
     test('macOS環境でのパス生成ロジック', () => {
@@ -36,12 +34,11 @@ describe('App Paths', () => {
       const appDirectoryName = 'Calil-management-app';
       const homeDir = '/Users/testuser';
 
-      let appRoot: string;
-      if (platform === 'darwin') {
-        appRoot = path.join(homeDir, 'Library', 'Application Support', appDirectoryName);
-      } else {
-        appRoot = '';
-      }
+      const appRoot = resolveAppRoot({
+        platform,
+        homedir: homeDir,
+        appDirectoryName,
+      });
 
       expect(appRoot).toBe('/Users/testuser/Library/Application Support/Calil-management-app');
     });
@@ -51,14 +48,14 @@ describe('App Paths', () => {
       const appDirectoryName = 'Calil-management-app';
       const homeDir = '/home/testuser';
 
-      let appRoot: string;
-      if (platform !== 'win32' && platform !== 'darwin') {
-        const xdgData = undefined; // XDG_DATA_HOME is not set
-        const base = xdgData ?? path.join(homeDir, '.local', 'share');
-        appRoot = path.join(base, appDirectoryName);
-      } else {
-        appRoot = '';
-      }
+      const appRoot = resolveAppRoot({
+        platform,
+        homedir: homeDir,
+        env: {
+          CALIL_APP_DIR_NAME: appDirectoryName,
+        } as NodeJS.ProcessEnv,
+        appDirectoryName,
+      });
 
       expect(appRoot).toBe('/home/testuser/.local/share/Calil-management-app');
     });
@@ -68,13 +65,15 @@ describe('App Paths', () => {
       const appDirectoryName = 'Calil-management-app';
       const xdgDataHome = '/home/testuser/.local/share';
 
-      let appRoot: string;
-      if (platform !== 'win32' && platform !== 'darwin') {
-        const base = xdgDataHome ?? path.join('/home/testuser', '.local', 'share');
-        appRoot = path.join(base, appDirectoryName);
-      } else {
-        appRoot = '';
-      }
+      const appRoot = resolveAppRoot({
+        platform,
+        env: {
+          XDG_DATA_HOME: xdgDataHome,
+          CALIL_APP_DIR_NAME: appDirectoryName,
+        } as NodeJS.ProcessEnv,
+        homedir: '/home/testuser',
+        appDirectoryName,
+      });
 
       expect(appRoot).toBe('/home/testuser/.local/share/Calil-management-app');
     });

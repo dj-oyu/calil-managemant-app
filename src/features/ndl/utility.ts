@@ -21,7 +21,7 @@ export const convertISBN10to13 = (isbn10: string): string => {
 function bibliographicInfoToNdlItem(info: BibliographicInfo): NdlItem {
     return {
         title: info.title,
-        titleKana: info.title_kana,
+        titleKana: info.title_kana ?? null,
         link: null,
         creators: info.authors,
         creatorsKana: info.authors_kana || [],
