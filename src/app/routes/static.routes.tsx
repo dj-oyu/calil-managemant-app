@@ -2,10 +2,12 @@ import { Hono } from "hono";
 import { logger } from "../../shared/logging/logger";
 import { getCacheHeaders } from "../utils/cache-headers";
 import { isDevelopment } from "../utils/environment";
-import { moduleDir, isCompiledBinary } from "../utils/path-resolution";
+import { getModuleDir, isCompiledBinary } from "../utils/path-resolution";
 import { embeddedCss, getEmbeddedClientJs } from "../embedded-assets";
 
 export const staticRoutes = new Hono();
+
+const moduleDir = getModuleDir(import.meta.url);
 
 // Faviconを配信
 staticRoutes.get("/favicon.ico", async (c) => {

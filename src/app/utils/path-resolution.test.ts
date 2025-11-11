@@ -3,7 +3,7 @@ import { getModuleDir, isCompiledBinary } from "./path-resolution";
 
 describe("path-resolution", () => {
     test("getModuleDir returns a valid URL", () => {
-        const moduleDir = getModuleDir();
+        const moduleDir = getModuleDir(import.meta.url);
 
         expect(moduleDir).toBeInstanceOf(URL);
         expect(moduleDir.protocol).toBe("file:");
@@ -22,7 +22,7 @@ describe("path-resolution", () => {
     });
 
     test("moduleDir path ends with separator", () => {
-        const moduleDir = getModuleDir();
+        const moduleDir = getModuleDir(import.meta.url);
         const path = moduleDir.pathname;
 
         expect(path.endsWith("/")).toBe(true);

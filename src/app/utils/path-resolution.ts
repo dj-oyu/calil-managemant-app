@@ -9,13 +9,14 @@ export const isCompiledBinary = !isDevelopment && Bun.main !== import.meta.path;
 /**
  * Get module directory URL for path resolution
  *
+ * @param importMetaUrl - The import.meta.url from the calling module
  * @returns Module directory URL
  *
  * @remarks
  * - Compiled: Uses the executable directory
  * - Development: Uses the module directory
  */
-export function getModuleDir(): URL {
+export function getModuleDir(importMetaUrl: string): URL {
     if (isCompiledBinary) {
         // When compiled, use the executable directory
         const exePath = Bun.main;
@@ -32,8 +33,6 @@ export function getModuleDir(): URL {
         );
     } else {
         // In development, use the module directory
-        return new URL(".", import.meta.url);
+        return new URL(".", importMetaUrl);
     }
 }
-
-export const moduleDir = getModuleDir();

@@ -36,7 +36,7 @@ import {
 } from "../features/bibliographic/db/schema";
 import { NODE_ENV, isDevelopment } from "./utils/environment";
 import { getCacheHeaders } from "./utils/cache-headers";
-import { moduleDir, isCompiledBinary } from "./utils/path-resolution";
+import { getModuleDir, isCompiledBinary } from "./utils/path-resolution";
 import { BookCard, BookDetail } from "./components/books";
 import { StreamingBookListPage } from "./components/pages/StreamingBookListPage";
 import type { Book } from "../features/calil/types/book";
@@ -48,6 +48,8 @@ import { bibliographicRoutes } from "./routes/bibliographic.routes";
 import { staticRoutes } from "./routes/static.routes";
 
 export const app = new Hono();
+
+const moduleDir = getModuleDir(import.meta.url);
 
 logger.info("Application starting", {
     environment: NODE_ENV,
