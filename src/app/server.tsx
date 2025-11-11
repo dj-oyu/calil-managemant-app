@@ -21,6 +21,13 @@ import {
     loadEmbeddedClientJs,
     getEmbeddedClientJs,
 } from "./embedded-assets";
+import {
+    getDatabase,
+    upsertBibliographicInfo,
+    getBibliographicInfo,
+    getBibliographicInfoBatch,
+    type BibliographicInfo,
+} from "../features/bibliographic/db/schema";
 
 export const app = new Hono();
 
@@ -72,6 +79,10 @@ await initCoverCache();
 
 // Load embedded client JavaScript for compiled binaries
 await loadEmbeddedClientJs();
+
+// Initialize bibliographic database
+const db = getDatabase();
+logger.info("Bibliographic database initialized");
 
 // Define module directory URL for path resolution (from PR #2)
 // Detect if running as a compiled binary
@@ -546,6 +557,16 @@ const StreamingBookListPage: FC<{ activeTab?: "wish" | "read" }> = ({
             <main>
                 <h1>📚 マイブックリスト</h1>
 
+                <div class="download-section">
+                    <a
+                        href={`/api/download/bibliographic/${activeTab}`}
+                        class="download-button"
+                        download
+                    >
+                        📥 書誌情報をダウンロード
+                    </a>
+                </div>
+
                 <nav class="tab-nav" data-island="tab-navigation">
                     <a
                         href="/?tab=wish"
@@ -789,7 +810,157 @@ app.get("/api/books/:isbn", async (c) => {
     };
     logger.info("Book details retrieved", summary);
 
+    // Save to database for future JSON export
+    if (item.isbn13 && item.title) {
+        try {
+            const bibInfo: BibliographicInfo = {
+                isbn: item.isbn13,
+                title: item.title,
+                authors: item.creators,
+                publisher: item.publisher,
+                pub_year: item.pubYear,
+                ndc10: item.ndc10,
+                ndlc: item.ndlc,
+            };
+            upsertBibliographicInfo(db, bibInfo);
+            logger.info("Bibliographic info saved to database", { isbn: item.isbn13 });
+        } catch (error) {
+            logger.error("Failed to save bibliographic info", {
+                isbn: item.isbn13,
+                error: String(error),
+            });
+        }
+    }
+
     return c.html(renderBookDetail(item));
+});
+
+// APIエンドポイント: 書誌情報のJSONダウンロード
+app.get("/api/download/bibliographic/:listType", async (c) => {
+    const listType = c.req.param("listType") as "wish" | "read";
+
+    if (listType !== "wish" && listType !== "read") {
+        logger.warn("API: Invalid list type for download", { listType });
+        return c.json({ error: "Invalid list type" }, 400);
+    }
+
+    logger.info("API: Bibliographic download request", { listType });
+
+    try {
+        // Fetch all books from the list
+        const books = await fetchBookList(listType);
+        logger.info("API: Fetched books for download", {
+            listType,
+            count: books.length,
+        });
+
+        // Convert ISBN10 to ISBN13 and collect valid ISBNs
+        const isbn13List = books
+            .map((book) => convertISBN10to13(book.isbn))
+            .filter((isbn) => isbn && isbn.length === 13);
+
+        logger.info("API: Converted ISBNs", {
+            listType,
+            validIsbnCount: isbn13List.length,
+        });
+
+        // Get existing bibliographic info from database
+        const existingInfo = getBibliographicInfoBatch(db, isbn13List);
+        const existingIsbnSet = new Set(existingInfo.map((info) => info.isbn));
+
+        logger.info("API: Found existing bibliographic info", {
+            listType,
+            existingCount: existingInfo.length,
+        });
+
+        // Fetch missing bibliographic info from NDL
+        const missingIsbns = isbn13List.filter(
+            (isbn) => !existingIsbnSet.has(isbn)
+        );
+        const newlyFetchedInfo: BibliographicInfo[] = [];
+
+        if (missingIsbns.length > 0) {
+            logger.info("API: Fetching missing bibliographic info from NDL", {
+                listType,
+                missingCount: missingIsbns.length,
+            });
+
+            for (const isbn of missingIsbns) {
+                try {
+                    const detail = await NDLsearch(isbn);
+                    if (detail && detail[0]) {
+                        const item = detail[0];
+                        if (item.isbn13 && item.title) {
+                            const bibInfo: BibliographicInfo = {
+                                isbn: item.isbn13,
+                                title: item.title,
+                                authors: item.creators,
+                                publisher: item.publisher,
+                                pub_year: item.pubYear,
+                                ndc10: item.ndc10,
+                                ndlc: item.ndlc,
+                            };
+                            upsertBibliographicInfo(db, bibInfo);
+                            newlyFetchedInfo.push(bibInfo);
+                            logger.info("API: Fetched and saved NDL data", {
+                                isbn,
+                            });
+                        }
+                    }
+                } catch (error) {
+                    logger.error("API: Failed to fetch NDL data", {
+                        isbn,
+                        error: String(error),
+                    });
+                }
+            }
+        }
+
+        // Combine all bibliographic info
+        const allBibInfo = [...existingInfo, ...newlyFetchedInfo];
+
+        logger.info("API: Prepared bibliographic data for download", {
+            listType,
+            totalRecords: allBibInfo.length,
+        });
+
+        // Format for JSON response
+        const jsonData = {
+            metadata: {
+                listType,
+                generatedAt: new Date().toISOString(),
+                totalRecords: allBibInfo.length,
+            },
+            books: allBibInfo.map((info) => ({
+                isbn: info.isbn,
+                title: info.title,
+                authors: info.authors,
+                publisher: info.publisher || "",
+                pub_year: info.pub_year || "",
+                classification: {
+                    ndc10: info.ndc10 || "",
+                    ndlc: info.ndlc || "",
+                },
+            })),
+        };
+
+        // Return JSON with download headers
+        const filename = `bibliographic-${listType}-${new Date().toISOString().split("T")[0]}.json`;
+        return c.json(jsonData, 200, {
+            "Content-Disposition": `attachment; filename="${filename}"`,
+            "Cache-Control": "public, max-age=2592000", // 30 days cache
+            "Content-Type": "application/json; charset=utf-8",
+        });
+    } catch (error) {
+        logger.error("API: Failed to generate bibliographic download", {
+            listType,
+            error: String(error),
+        });
+        return c.json(
+            { error: "Failed to generate bibliographic data" },
+            500
+        );
+    }
 });
 
 // ログビューアーエンドポイント
