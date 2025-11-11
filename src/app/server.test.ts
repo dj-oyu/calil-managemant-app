@@ -2,6 +2,8 @@ import { test, expect, describe, beforeAll, mock } from "bun:test";
 import { app } from "./server";
 import { convertISBN10to13 } from "../features/ndl/utility";
 import type { NdlItem } from "../features/ndl/utility";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 /**
  * 実際のサーバーに対する統合テスト（冪等性を保証）
@@ -146,7 +148,7 @@ describe("Server Integration Tests (Idempotent)", () => {
                 ): Promise<{ path: string; contentType: string } | null> => {
                     if (isbn === "9784873117522") {
                         return Promise.resolve({
-                            path: "/tmp/mock-cover.jpg",
+                            path: path.join(tmpdir(), "mock-cover.jpg"),
                             contentType: "image/jpeg",
                         });
                     }

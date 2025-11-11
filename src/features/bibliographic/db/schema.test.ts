@@ -1,6 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
-import { unlinkSync, existsSync } from "node:fs";
 import {
     upsertBibliographicInfo,
     getBibliographicInfo,
@@ -13,20 +12,15 @@ import {
     type BibliographicInfo,
 } from "./schema";
 
-// Create a temporary file-based database for testing
-// Using file-based DB instead of :memory: to avoid bun:sqlite FTS5 trigger issues
+// Create a temporary in-memory database for testing
+// Using :memory: to avoid file lock issues on Windows
 function createTestDatabase(): Database {
-    const tmpFile = `/tmp/test-bibliographic-${Date.now()}-${Math.random().toString(36).substring(7)}.db`;
-    return new Database(tmpFile, { create: true });
+    return new Database(":memory:");
 }
 
-// Clean up temporary database file
+// Clean up database (no-op for in-memory databases)
 function cleanupTestDatabase(db: Database): void {
-    const filename = db.filename;
     db.close();
-    if (filename && filename !== ":memory:" && existsSync(filename)) {
-        unlinkSync(filename);
-    }
 }
 
 // Initialize test database with schema

@@ -40,7 +40,7 @@ describe('App Paths', () => {
         appDirectoryName,
       });
 
-      expect(appRoot).toBe('/Users/testuser/Library/Application Support/Calil-management-app');
+      expect(appRoot).toBe(path.join(homeDir, 'Library', 'Application Support', appDirectoryName));
     });
 
     test('Linux環境でのパス生成ロジック（XDG_DATA_HOMEなし）', () => {
@@ -57,7 +57,7 @@ describe('App Paths', () => {
         appDirectoryName,
       });
 
-      expect(appRoot).toBe('/home/testuser/.local/share/Calil-management-app');
+      expect(appRoot).toBe(path.join(homeDir, '.local', 'share', appDirectoryName));
     });
 
     test('Linux環境でのパス生成ロジック（XDG_DATA_HOMEあり）', () => {
@@ -75,7 +75,7 @@ describe('App Paths', () => {
         appDirectoryName,
       });
 
-      expect(appRoot).toBe('/home/testuser/.local/share/Calil-management-app');
+      expect(appRoot).toBe(path.join(xdgDataHome, appDirectoryName));
     });
   });
 
@@ -105,10 +105,10 @@ describe('App Paths', () => {
     });
 
     test('cacheディレクトリはrootの下に配置される', () => {
-      const appRoot = '/test/root';
+      const appRoot = path.normalize('/test/root');
       const cachePath = path.join(appRoot, 'cache');
 
-      expect(cachePath.startsWith(appRoot)).toBe(true);
+      expect(path.normalize(cachePath).startsWith(path.normalize(appRoot))).toBe(true);
       expect(path.basename(cachePath)).toBe('cache');
     });
 
@@ -143,7 +143,7 @@ describe('App Paths', () => {
       const base = '/app';
       const subPath = path.join(base, 'vault', 'calil.cookies.json');
 
-      expect(subPath).toBe('/app/vault/calil.cookies.json');
+      expect(subPath).toBe(path.join(base, 'vault', 'calil.cookies.json'));
     });
   });
 });
