@@ -11,7 +11,12 @@ const moduleDir = getModuleDir(import.meta.url);
 
 // Faviconを配信
 staticRoutes.get("/favicon.ico", async (c) => {
-    const faviconUrl = new URL("./favicon.ico", moduleDir);
+    // In compiled/test mode: moduleDir = src/app/ (from executable)
+    // In development: moduleDir = src/app/routes/ (from this file)
+    const faviconUrl = new URL(
+        isCompiledBinary ? "./favicon.ico" : "../favicon.ico",
+        moduleDir,
+    );
     const file = Bun.file(faviconUrl);
 
     if (!(await file.exists())) {
@@ -49,7 +54,14 @@ staticRoutes.get("/public/styles/:filename{.+\\.css$}", async (c) => {
     }
 
     // Fall back to file system (for development or if file not embedded)
-    const cssUrl = new URL(`./styles/${filename}`, moduleDir);
+    // In compiled/test mode: moduleDir = src/app/ (from executable)
+    // In development: moduleDir = src/app/routes/ (from this file)
+    const cssUrl = new URL(
+        isCompiledBinary
+            ? `./styles/${filename}`
+            : `../styles/${filename}`,
+        moduleDir,
+    );
     const file = Bun.file(cssUrl);
     if (!(await file.exists())) {
         logger.warn("CSS file not found", {
@@ -88,10 +100,10 @@ staticRoutes.get("/public/:path{.+\\.js$}", async (c) => {
     const tsPath = path.replace(/\.js$/, ".ts");
 
     // clientディレクトリ全体を検索（scripts/, islands/など）
-    // In compiled binary, client directory is relative to executable
-    // In development, it's ../../client relative to src/app
+    // In compiled/test mode: moduleDir = src/app/, so ../../client to reach project root
+    // In development: moduleDir = src/app/routes/, so ../../../client to reach project root
     const tsUrl = new URL(
-        isCompiledBinary ? `./client/${tsPath}` : `../../client/${tsPath}`,
+        isCompiledBinary ? `../../client/${tsPath}` : `../../../client/${tsPath}`,
         moduleDir,
     );
 
