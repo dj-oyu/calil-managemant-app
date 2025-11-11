@@ -12,11 +12,11 @@ export interface BibliographicInfo {
     title: string;
     title_kana?: string | null;
     authors: string[];
-    authors_kana?: string[] | null;
-    publisher?: string | null;
-    pub_year?: string | null;
-    ndc10?: string | null;
-    ndlc?: string | null;
+    authors_kana?: string[];
+    publisher: string | null;
+    pub_year: string | null;
+    ndc10: string | null;
+    ndlc: string | null;
 }
 
 /**
@@ -34,26 +34,27 @@ export interface BibliographicInfo {
  */
 export function upsertBibliographicInfo_Triggerless(
     db: Database,
-    info: BibliographicInfo
+    info: BibliographicInfo,
 ): void {
     // トランザクションで実行（整合性を保証）
     db.run("BEGIN TRANSACTION");
 
     try {
         // 既存レコードのrowidを取得
-        const existingRow = db.prepare(
-            "SELECT rowid FROM bibliographic_info WHERE isbn = ?"
-        ).get(info.isbn) as { rowid: number } | undefined;
+        const existingRow = db
+            .prepare("SELECT rowid FROM bibliographic_info WHERE isbn = ?")
+            .get(info.isbn) as { rowid: number } | undefined;
 
         if (existingRow) {
             // UPDATE処理
             // 1. FTS5から古いインデックスを削除
-            db.prepare(
-                "DELETE FROM bibliographic_fts WHERE rowid = ?"
-            ).run(existingRow.rowid);
+            db.prepare("DELETE FROM bibliographic_fts WHERE rowid = ?").run(
+                existingRow.rowid,
+            );
 
             // 2. メインテーブルを更新
-            db.prepare(`
+            db.prepare(
+                `
                 UPDATE bibliographic_info SET
                     title = ?,
                     title_kana = ?,
@@ -65,7 +66,8 @@ export function upsertBibliographicInfo_Triggerless(
                     ndlc = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE isbn = ?
-            `).run(
+            `,
+            ).run(
                 info.title,
                 info.title_kana || null,
                 JSON.stringify(info.authors),
@@ -74,32 +76,36 @@ export function upsertBibliographicInfo_Triggerless(
                 info.pub_year,
                 info.ndc10,
                 info.ndlc,
-                info.isbn
+                info.isbn,
             );
 
             // 3. FTS5に新しいインデックスを追加
-            db.prepare(`
+            db.prepare(
+                `
                 INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).run(
+            `,
+            ).run(
                 existingRow.rowid,
                 info.isbn,
                 info.title,
                 info.title_kana || null,
                 JSON.stringify(info.authors),
                 info.authors_kana ? JSON.stringify(info.authors_kana) : null,
-                info.publisher
+                info.publisher,
             );
         } else {
             // INSERT処理
             // メインテーブルに挿入（トリガーでFTS5に自動追加される）
-            db.prepare(`
+            db.prepare(
+                `
                 INSERT INTO bibliographic_info (
                     isbn, title, title_kana, authors, authors_kana,
                     publisher, pub_year, ndc10, ndlc, updated_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            `).run(
+            `,
+            ).run(
                 info.isbn,
                 info.title,
                 info.title_kana || null,
@@ -108,7 +114,7 @@ export function upsertBibliographicInfo_Triggerless(
                 info.publisher,
                 info.pub_year,
                 info.ndc10,
-                info.ndlc
+                info.ndlc,
             );
         }
 
@@ -132,22 +138,23 @@ export function upsertBibliographicInfo_Triggerless(
  */
 export function upsertBibliographicInfo_NoTriggers(
     db: Database,
-    info: BibliographicInfo
+    info: BibliographicInfo,
 ): void {
     db.run("BEGIN TRANSACTION");
 
     try {
-        const existingRow = db.prepare(
-            "SELECT rowid FROM bibliographic_info WHERE isbn = ?"
-        ).get(info.isbn) as { rowid: number } | undefined;
+        const existingRow = db
+            .prepare("SELECT rowid FROM bibliographic_info WHERE isbn = ?")
+            .get(info.isbn) as { rowid: number } | undefined;
 
         if (existingRow) {
             // UPDATE処理
-            db.prepare(
-                "DELETE FROM bibliographic_fts WHERE rowid = ?"
-            ).run(existingRow.rowid);
+            db.prepare("DELETE FROM bibliographic_fts WHERE rowid = ?").run(
+                existingRow.rowid,
+            );
 
-            db.prepare(`
+            db.prepare(
+                `
                 UPDATE bibliographic_info SET
                     title = ?,
                     title_kana = ?,
@@ -159,7 +166,8 @@ export function upsertBibliographicInfo_NoTriggers(
                     ndlc = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE isbn = ?
-            `).run(
+            `,
+            ).run(
                 info.title,
                 info.title_kana || null,
                 JSON.stringify(info.authors),
@@ -168,53 +176,63 @@ export function upsertBibliographicInfo_NoTriggers(
                 info.pub_year,
                 info.ndc10,
                 info.ndlc,
-                info.isbn
+                info.isbn,
             );
 
-            db.prepare(`
+            db.prepare(
+                `
                 INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).run(
+            `,
+            ).run(
                 existingRow.rowid,
                 info.isbn,
                 info.title,
                 info.title_kana || null,
                 JSON.stringify(info.authors),
                 info.authors_kana ? JSON.stringify(info.authors_kana) : null,
-                info.publisher
+                info.publisher,
             );
         } else {
             // INSERT処理（トリガーを使わずに手動でFTS5も挿入）
-            const result = db.prepare(`
+            const result = db
+                .prepare(
+                    `
                 INSERT INTO bibliographic_info (
                     isbn, title, title_kana, authors, authors_kana,
                     publisher, pub_year, ndc10, ndlc, updated_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            `).run(
-                info.isbn,
-                info.title,
-                info.title_kana || null,
-                JSON.stringify(info.authors),
-                info.authors_kana ? JSON.stringify(info.authors_kana) : null,
-                info.publisher,
-                info.pub_year,
-                info.ndc10,
-                info.ndlc
-            );
+            `,
+                )
+                .run(
+                    info.isbn,
+                    info.title,
+                    info.title_kana || null,
+                    JSON.stringify(info.authors),
+                    info.authors_kana
+                        ? JSON.stringify(info.authors_kana)
+                        : null,
+                    info.publisher,
+                    info.pub_year,
+                    info.ndc10,
+                    info.ndlc,
+                );
 
             // 手動でFTS5に挿入
-            db.prepare(`
+            db.prepare(
+                `
                 INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).run(
+            `,
+            ).run(
                 result.lastInsertRowid,
                 info.isbn,
                 info.title,
                 info.title_kana || null,
                 JSON.stringify(info.authors),
                 info.authors_kana ? JSON.stringify(info.authors_kana) : null,
-                info.publisher
+                info.publisher,
             );
         }
 
@@ -242,24 +260,25 @@ export function upsertBibliographicInfo_NoTriggers(
  */
 export function upsertBibliographicInfo_Hybrid(
     db: Database,
-    info: BibliographicInfo
+    info: BibliographicInfo,
 ): void {
     // 既存レコードの確認
-    const existingRow = db.prepare(
-        "SELECT rowid FROM bibliographic_info WHERE isbn = ?"
-    ).get(info.isbn) as { rowid: number } | undefined;
+    const existingRow = db
+        .prepare("SELECT rowid FROM bibliographic_info WHERE isbn = ?")
+        .get(info.isbn) as { rowid: number } | undefined;
 
     if (existingRow) {
         // UPDATE処理のみトランザクションとFTS5手動管理
         db.run("BEGIN TRANSACTION");
         try {
             // 1. FTS5から削除
-            db.prepare(
-                "DELETE FROM bibliographic_fts WHERE rowid = ?"
-            ).run(existingRow.rowid);
+            db.prepare("DELETE FROM bibliographic_fts WHERE rowid = ?").run(
+                existingRow.rowid,
+            );
 
             // 2. メインテーブル更新（UPDATEトリガーは使わない）
-            db.prepare(`
+            db.prepare(
+                `
                 UPDATE bibliographic_info SET
                     title = ?,
                     title_kana = ?,
@@ -271,7 +290,8 @@ export function upsertBibliographicInfo_Hybrid(
                     ndlc = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE isbn = ?
-            `).run(
+            `,
+            ).run(
                 info.title,
                 info.title_kana || null,
                 JSON.stringify(info.authors),
@@ -280,21 +300,23 @@ export function upsertBibliographicInfo_Hybrid(
                 info.pub_year,
                 info.ndc10,
                 info.ndlc,
-                info.isbn
+                info.isbn,
             );
 
             // 3. FTS5に再挿入
-            db.prepare(`
+            db.prepare(
+                `
                 INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).run(
+            `,
+            ).run(
                 existingRow.rowid,
                 info.isbn,
                 info.title,
                 info.title_kana || null,
                 JSON.stringify(info.authors),
                 info.authors_kana ? JSON.stringify(info.authors_kana) : null,
-                info.publisher
+                info.publisher,
             );
 
             db.run("COMMIT");
@@ -304,13 +326,15 @@ export function upsertBibliographicInfo_Hybrid(
         }
     } else {
         // INSERT処理はトリガーに任せる（正常動作）
-        db.prepare(`
+        db.prepare(
+            `
             INSERT INTO bibliographic_info (
                 isbn, title, title_kana, authors, authors_kana,
                 publisher, pub_year, ndc10, ndlc, updated_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        `).run(
+        `,
+        ).run(
             info.isbn,
             info.title,
             info.title_kana || null,
@@ -319,7 +343,7 @@ export function upsertBibliographicInfo_Hybrid(
             info.publisher,
             info.pub_year,
             info.ndc10,
-            info.ndlc
+            info.ndlc,
         );
     }
 }
