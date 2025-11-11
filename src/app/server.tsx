@@ -26,7 +26,13 @@ import {
     upsertBibliographicInfo,
     getBibliographicInfo,
     getBibliographicInfoBatch,
+    searchBibliographic,
+    countSearchResults,
+    getAllNDC10Classifications,
+    getAllNDLCClassifications,
+    getAllPublishers,
     type BibliographicInfo,
+    type SearchOptions,
 } from "../features/bibliographic/db/schema";
 
 export const app = new Hono();
@@ -816,7 +822,9 @@ app.get("/api/books/:isbn", async (c) => {
             const bibInfo: BibliographicInfo = {
                 isbn: item.isbn13,
                 title: item.title,
+                title_kana: item.titleKana,
                 authors: item.creators,
+                authors_kana: item.creatorsKana,
                 publisher: item.publisher,
                 pub_year: item.pubYear,
                 ndc10: item.ndc10,
@@ -894,7 +902,9 @@ app.get("/api/download/bibliographic/:listType", async (c) => {
                             const bibInfo: BibliographicInfo = {
                                 isbn: item.isbn13,
                                 title: item.title,
+                                title_kana: item.titleKana,
                                 authors: item.creators,
+                                authors_kana: item.creatorsKana,
                                 publisher: item.publisher,
                                 pub_year: item.pubYear,
                                 ndc10: item.ndc10,
@@ -960,6 +970,99 @@ app.get("/api/download/bibliographic/:listType", async (c) => {
             { error: "Failed to generate bibliographic data" },
             500
         );
+    }
+});
+
+// APIエンドポイント: 書誌情報検索
+app.get("/api/search/bibliographic", async (c) => {
+    const query = c.req.query("q");
+    const title = c.req.query("title");
+    const author = c.req.query("author");
+    const publisher = c.req.query("publisher");
+    const isbn = c.req.query("isbn");
+    const ndc10 = c.req.query("ndc10");
+    const ndlc = c.req.query("ndlc");
+    const yearFrom = c.req.query("yearFrom");
+    const yearTo = c.req.query("yearTo");
+    const limitParam = c.req.query("limit");
+    const offsetParam = c.req.query("offset");
+
+    const limit = limitParam ? parseInt(limitParam, 10) : 50;
+    const offset = offsetParam ? parseInt(offsetParam, 10) : 0;
+
+    logger.info("API: Bibliographic search request", {
+        query,
+        title,
+        author,
+        publisher,
+        isbn,
+        ndc10,
+        ndlc,
+        yearFrom,
+        yearTo,
+        limit,
+        offset,
+    });
+
+    try {
+        const searchOptions: SearchOptions = {
+            query,
+            title,
+            author,
+            publisher,
+            isbn,
+            ndc10,
+            ndlc,
+            yearFrom,
+            yearTo,
+            limit,
+            offset,
+        };
+
+        const results = searchBibliographic(db, searchOptions);
+        const totalCount = countSearchResults(db, searchOptions);
+
+        logger.info("API: Search completed", {
+            resultsCount: results.length,
+            totalCount,
+        });
+
+        return c.json({
+            results,
+            pagination: {
+                limit,
+                offset,
+                totalCount,
+                hasMore: offset + results.length < totalCount,
+            },
+        });
+    } catch (error) {
+        logger.error("API: Search failed", {
+            error: String(error),
+        });
+        return c.json({ error: "Search failed" }, 500);
+    }
+});
+
+// APIエンドポイント: 分類・出版社の一覧取得
+app.get("/api/search/filters", async (c) => {
+    logger.info("API: Fetching search filters");
+
+    try {
+        const ndc10Classifications = getAllNDC10Classifications(db);
+        const ndlcClassifications = getAllNDLCClassifications(db);
+        const publishers = getAllPublishers(db);
+
+        return c.json({
+            ndc10: ndc10Classifications,
+            ndlc: ndlcClassifications,
+            publishers: publishers,
+        });
+    } catch (error) {
+        logger.error("API: Failed to fetch search filters", {
+            error: String(error),
+        });
+        return c.json({ error: "Failed to fetch filters" }, 500);
     }
 });
 
