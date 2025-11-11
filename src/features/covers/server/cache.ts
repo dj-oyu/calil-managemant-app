@@ -89,12 +89,21 @@ export async function getCoverImage(
         const arrayBuffer = await response.arrayBuffer();
 
         // Cache the image
-        await ensureDir(path.dirname(cachePath));
-        await Bun.write(cachePath, arrayBuffer);
-        logger.info("Cover image cached", {
-            isbn,
-            size: arrayBuffer.byteLength,
-        });
+        try {
+            await Bun.write(cachePath, arrayBuffer);
+            logger.info("Cover image cached", {
+                isbn,
+                path: cachePath,
+                size: arrayBuffer.byteLength,
+            });
+        } catch (writeError) {
+            logger.error("Failed to write cover image to cache", {
+                isbn,
+                path: cachePath,
+                error: String(writeError),
+            });
+            throw writeError;
+        }
 
         return {
             path: cachePath,
