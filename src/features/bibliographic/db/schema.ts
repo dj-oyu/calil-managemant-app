@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, unlinkSync, renameSync, readdirSync } from "node:fs";
 import { appRoot } from "../../../shared/config/app-paths";
 import path from "node:path";
 import { runMigrations, getCurrentVersion, migrations } from "./migrations";
@@ -58,17 +58,18 @@ const EXPECTED_SCHEMA_VERSION = migrations.length > 0
 
 /**
  * Check if database schema is outdated and needs reset
+ * Returns [shouldReset, currentVersion]
  */
-function shouldResetDatabase(dbPath: string): boolean {
+function shouldResetDatabase(dbPath: string): [boolean, number | null] {
     if (!existsSync(dbPath)) {
-        return false; // New database, no reset needed
+        return [false, null]; // New database, no reset needed
     }
 
+    let tempDb: Database | null = null;
     try {
         // Open database temporarily to check version
-        const tempDb = new Database(dbPath, { readonly: true });
+        tempDb = new Database(dbPath, { readonly: true });
         const currentVersion = getCurrentVersion(tempDb);
-        tempDb.close();
 
         // Reset if current version is less than expected
         if (currentVersion < EXPECTED_SCHEMA_VERSION) {
@@ -76,34 +77,85 @@ function shouldResetDatabase(dbPath: string): boolean {
                 currentVersion,
                 expectedVersion: EXPECTED_SCHEMA_VERSION,
             });
-            return true;
+            return [true, currentVersion];
         }
 
-        return false;
+        return [false, currentVersion];
     } catch (error) {
         // If we can't read the database, reset it
         logger.warn("Failed to check database version, will reset", {
             error: String(error),
         });
-        return true;
+        return [true, null];
+    } finally {
+        // Ensure database is closed before attempting deletion
+        if (tempDb) {
+            try {
+                tempDb.close();
+            } catch (closeError) {
+                logger.warn("Error closing temporary database", {
+                    error: String(closeError),
+                });
+            }
+        }
     }
 }
 
 /**
- * Reset database by deleting the file
+ * Reset database by renaming the old file and creating a new one
+ * This avoids file locking issues on Windows
  */
 function resetDatabase(dbPath: string): void {
+    if (!existsSync(dbPath)) {
+        return; // File doesn't exist, nothing to reset
+    }
+
     try {
-        if (existsSync(dbPath)) {
-            unlinkSync(dbPath);
-            logger.info("Database file deleted for reset", { path: dbPath });
+        // Generate backup filename with timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const backupPath = `${dbPath}.${timestamp}.old`;
+
+        // Rename instead of delete to avoid locking issues
+        renameSync(dbPath, backupPath);
+        logger.info("Database file renamed for reset", {
+            oldPath: dbPath,
+            newPath: backupPath,
+        });
+
+        // Optionally, try to delete old backup files (best effort)
+        try {
+            const dir = path.dirname(dbPath);
+            const basename = path.basename(dbPath);
+            const oldBackups = readdirSync(dir)
+                .filter((f: string) => f.startsWith(basename) && f.endsWith(".old"))
+                .map((f: string) => path.join(dir, f));
+
+            // Keep only the most recent 3 backups
+            if (oldBackups.length > 3) {
+                oldBackups
+                    .sort()
+                    .slice(0, -3)
+                    .forEach((f: string) => {
+                        try {
+                            unlinkSync(f);
+                            logger.debug("Deleted old backup", { path: f });
+                        } catch {
+                            // Ignore errors when deleting old backups
+                        }
+                    });
+            }
+        } catch {
+            // Ignore errors when cleaning up old backups
         }
-    } catch (error) {
-        logger.error("Failed to delete database file", {
+    } catch (error: any) {
+        logger.error("Failed to reset database file", {
             path: dbPath,
             error: String(error),
         });
-        throw error;
+        throw new Error(
+            `Cannot reset database file: ${error.message}. ` +
+            `Path: ${dbPath}`
+        );
     }
 }
 
@@ -116,8 +168,12 @@ export function getDatabase(): Database {
         const dbPath = path.join(appRoot, "bibliographic.db");
 
         // Check if database needs reset due to outdated schema
-        if (shouldResetDatabase(dbPath)) {
-            logger.info("Resetting database due to schema changes");
+        const [shouldReset, currentVersion] = shouldResetDatabase(dbPath);
+        if (shouldReset) {
+            logger.info("Resetting database due to schema changes", {
+                currentVersion: currentVersion ?? "unknown",
+                expectedVersion: EXPECTED_SCHEMA_VERSION,
+            });
             resetDatabase(dbPath);
         }
 
