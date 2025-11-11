@@ -1,6 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { unlinkSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
     upsertBibliographicInfo,
     getBibliographicInfo,
@@ -16,7 +18,7 @@ import {
 // Create a temporary file-based database for testing
 // Using file-based DB instead of :memory: to avoid bun:sqlite FTS5 trigger issues
 function createTestDatabase(): Database {
-    const tmpFile = `/tmp/test-bibliographic-${Date.now()}-${Math.random().toString(36).substring(7)}.db`;
+    const tmpFile = path.join(tmpdir(), `test-bibliographic-${Date.now()}-${Math.random().toString(36).substring(7)}.db`);
     return new Database(tmpFile, { create: true });
 }
 
