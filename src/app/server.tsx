@@ -954,12 +954,17 @@ app.get("/api/download/bibliographic/:listType", async (c) => {
             })),
         };
 
-        // Return JSON with download headers
+        // Return JSON with download headers (formatted for human readability)
         const filename = `bibliographic-${listType}-${new Date().toISOString().split("T")[0]}.json`;
-        return c.json(jsonData, 200, {
-            "Content-Disposition": `attachment; filename="${filename}"`,
-            "Cache-Control": "public, max-age=2592000", // 30 days cache
-            "Content-Type": "application/json; charset=utf-8",
+        const formattedJson = JSON.stringify(jsonData, null, 2);
+
+        return new Response(formattedJson, {
+            status: 200,
+            headers: {
+                "Content-Disposition": `attachment; filename="${filename}"`,
+                "Cache-Control": "public, max-age=2592000", // 30 days cache
+                "Content-Type": "application/json; charset=utf-8",
+            },
         });
     } catch (error) {
         logger.error("API: Failed to generate bibliographic download", {
