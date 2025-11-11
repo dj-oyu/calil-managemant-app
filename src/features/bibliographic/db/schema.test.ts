@@ -1,8 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
-import { unlinkSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import {
     upsertBibliographicInfo,
     getBibliographicInfo,
@@ -15,30 +12,15 @@ import {
     type BibliographicInfo,
 } from "./schema";
 
-// Create a temporary file-based database for testing
-// Using file-based DB instead of :memory: to avoid bun:sqlite FTS5 trigger issues
+// Create a temporary in-memory database for testing
+// Using :memory: to avoid file lock issues on Windows
 function createTestDatabase(): Database {
-    const tmpFile = path.join(tmpdir(), `test-bibliographic-${Date.now()}-${Math.random().toString(36).substring(7)}.db`);
-    return new Database(tmpFile, { create: true });
+    return new Database(":memory:");
 }
 
-// Clean up temporary database file
+// Clean up database (no-op for in-memory databases)
 function cleanupTestDatabase(db: Database): void {
-    const filename = db.filename;
     db.close();
-
-    // Windows環境ではファイルハンドルの解放に時間がかかる場合があるため、
-    // 削除に失敗してもエラーを無視する（一時ファイルはOSが後でクリーンアップ）
-    if (filename && filename !== ":memory:" && existsSync(filename)) {
-        try {
-            // 短い遅延を入れてファイルハンドルの解放を待つ
-            Bun.sleepSync(10);
-            unlinkSync(filename);
-        } catch (error) {
-            // Windows環境でのファイルロックエラーを無視
-            // console.warn(`Failed to delete test database: ${filename}`, error);
-        }
-    }
 }
 
 // Initialize test database with schema
