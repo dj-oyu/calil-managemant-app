@@ -32,6 +32,39 @@ export const migrations: Migration[] = [
             }
         },
     },
+    {
+        version: 2,
+        name: "add_ndl_metadata_columns",
+        up: (db: Database) => {
+            // Add all NDL metadata columns to bibliographic_info table
+            const newColumns = [
+                "link TEXT",
+                "issued TEXT",
+                "extent TEXT",
+                "price TEXT",
+                "ndl_bib_id TEXT",
+                "jpno TEXT",
+                "tohan_marc_no TEXT",
+                "subjects TEXT",
+                "categories TEXT",
+            ];
+
+            for (const column of newColumns) {
+                try {
+                    const columnName = column.split(" ")[0];
+                    db.run(`ALTER TABLE bibliographic_info ADD COLUMN ${column}`);
+                    logger.info(`Migration: Added ${columnName} column to bibliographic_info`);
+                } catch (error) {
+                    // Column might already exist, check error
+                    const errorMsg = String(error);
+                    if (!errorMsg.includes("duplicate column")) {
+                        throw error;
+                    }
+                    logger.debug(`Migration: ${column.split(" ")[0]} column already exists`);
+                }
+            }
+        },
+    },
 ];
 
 /**

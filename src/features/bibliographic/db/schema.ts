@@ -9,12 +9,21 @@ export type BibliographicRecord = {
     isbn: string;
     title: string;
     title_kana: string | null;
+    link: string | null; // NDL link
     authors: string; // JSON array string
     authors_kana: string | null; // JSON array string
     publisher: string | null;
     pub_year: string | null;
+    issued: string | null; // dcterms:issued
+    extent: string | null; // Page count
+    price: string | null; // Price
     ndc10: string | null;
     ndlc: string | null;
+    ndl_bib_id: string | null; // NDL Bibliographic ID
+    jpno: string | null; // JP number
+    tohan_marc_no: string | null; // TOHAN MARC number
+    subjects: string | null; // JSON array string
+    categories: string | null; // JSON array string
     description: string | null; // HTML description from NDL
     created_at: string;
     updated_at: string;
@@ -24,12 +33,21 @@ export type BibliographicInfo = {
     isbn: string;
     title: string;
     title_kana?: string | null;
+    link?: string | null; // NDL link
     authors: string[];
     authors_kana?: string[];
     publisher: string | null;
     pub_year: string | null;
+    issued?: string | null; // dcterms:issued
+    extent?: string | null; // Page count
+    price?: string | null; // Price
     ndc10: string | null;
     ndlc: string | null;
+    ndl_bib_id?: string | null; // NDL Bibliographic ID
+    jpno?: string | null; // JP number
+    tohan_marc_no?: string | null; // TOHAN MARC number
+    subjects?: string[]; // Other subjects
+    categories?: string[]; // Categories
     description?: string | null; // HTML description from NDL
 };
 
@@ -188,19 +206,28 @@ export function getDatabase(): Database {
  */
 function initializeDatabase(db: Database): void {
     // Create bibliographic_info table with search-optimized columns
-    // Note: This creates the table with all columns including description
+    // Note: This creates the table with all columns including NDL metadata
     // For existing databases, migrations will add missing columns
     db.run(`
         CREATE TABLE IF NOT EXISTS bibliographic_info (
             isbn TEXT PRIMARY KEY,
             title TEXT NOT NULL,
             title_kana TEXT,
+            link TEXT,
             authors TEXT NOT NULL,
             authors_kana TEXT,
             publisher TEXT,
             pub_year TEXT,
+            issued TEXT,
+            extent TEXT,
+            price TEXT,
             ndc10 TEXT,
             ndlc TEXT,
+            ndl_bib_id TEXT,
+            jpno TEXT,
+            tohan_marc_no TEXT,
+            subjects TEXT,
+            categories TEXT,
             description TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -321,40 +348,62 @@ export function upsertBibliographicInfo(
             // 3. Insert new record (INSERT trigger will handle FTS5)
             db.prepare(`
                 INSERT INTO bibliographic_info (
-                    isbn, title, title_kana, authors, authors_kana,
-                    publisher, pub_year, ndc10, ndlc, description, updated_at
+                    isbn, title, title_kana, link, authors, authors_kana,
+                    publisher, pub_year, issued, extent, price,
+                    ndc10, ndlc, ndl_bib_id, jpno, tohan_marc_no,
+                    subjects, categories, description, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             `).run(
                 info.isbn,
                 info.title,
                 info.title_kana || null,
+                info.link || null,
                 JSON.stringify(info.authors),
                 info.authors_kana ? JSON.stringify(info.authors_kana) : null,
                 info.publisher,
                 info.pub_year,
+                info.issued || null,
+                info.extent || null,
+                info.price || null,
                 info.ndc10,
                 info.ndlc,
+                info.ndl_bib_id || null,
+                info.jpno || null,
+                info.tohan_marc_no || null,
+                info.subjects ? JSON.stringify(info.subjects) : null,
+                info.categories ? JSON.stringify(info.categories) : null,
                 info.description || null
             );
         } else {
             // INSERT path: use trigger (works correctly)
             db.prepare(`
                 INSERT INTO bibliographic_info (
-                    isbn, title, title_kana, authors, authors_kana,
-                    publisher, pub_year, ndc10, ndlc, description, updated_at
+                    isbn, title, title_kana, link, authors, authors_kana,
+                    publisher, pub_year, issued, extent, price,
+                    ndc10, ndlc, ndl_bib_id, jpno, tohan_marc_no,
+                    subjects, categories, description, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             `).run(
                 info.isbn,
                 info.title,
                 info.title_kana || null,
+                info.link || null,
                 JSON.stringify(info.authors),
                 info.authors_kana ? JSON.stringify(info.authors_kana) : null,
                 info.publisher,
                 info.pub_year,
+                info.issued || null,
+                info.extent || null,
+                info.price || null,
                 info.ndc10,
                 info.ndlc,
+                info.ndl_bib_id || null,
+                info.jpno || null,
+                info.tohan_marc_no || null,
+                info.subjects ? JSON.stringify(info.subjects) : null,
+                info.categories ? JSON.stringify(info.categories) : null,
                 info.description || null
             );
         }
@@ -384,14 +433,23 @@ export function getBibliographicInfo(
         isbn: row.isbn,
         title: row.title,
         title_kana: row.title_kana,
+        link: row.link,
         authors: JSON.parse(row.authors) as string[],
         authors_kana: row.authors_kana
             ? (JSON.parse(row.authors_kana) as string[])
             : undefined,
         publisher: row.publisher,
         pub_year: row.pub_year,
+        issued: row.issued,
+        extent: row.extent,
+        price: row.price,
         ndc10: row.ndc10,
         ndlc: row.ndlc,
+        ndl_bib_id: row.ndl_bib_id,
+        jpno: row.jpno,
+        tohan_marc_no: row.tohan_marc_no,
+        subjects: row.subjects ? (JSON.parse(row.subjects) as string[]) : undefined,
+        categories: row.categories ? (JSON.parse(row.categories) as string[]) : undefined,
         description: row.description,
     };
 }
@@ -415,14 +473,23 @@ export function getBibliographicInfoBatch(
         isbn: row.isbn,
         title: row.title,
         title_kana: row.title_kana,
+        link: row.link,
         authors: JSON.parse(row.authors) as string[],
         authors_kana: row.authors_kana
             ? (JSON.parse(row.authors_kana) as string[])
             : undefined,
         publisher: row.publisher,
         pub_year: row.pub_year,
+        issued: row.issued,
+        extent: row.extent,
+        price: row.price,
         ndc10: row.ndc10,
         ndlc: row.ndlc,
+        ndl_bib_id: row.ndl_bib_id,
+        jpno: row.jpno,
+        tohan_marc_no: row.tohan_marc_no,
+        subjects: row.subjects ? (JSON.parse(row.subjects) as string[]) : undefined,
+        categories: row.categories ? (JSON.parse(row.categories) as string[]) : undefined,
         description: row.description,
     }));
 }
@@ -532,14 +599,23 @@ export function searchBibliographic(
         isbn: row.isbn,
         title: row.title,
         title_kana: row.title_kana,
+        link: row.link,
         authors: JSON.parse(row.authors) as string[],
         authors_kana: row.authors_kana
             ? (JSON.parse(row.authors_kana) as string[])
             : undefined,
         publisher: row.publisher,
         pub_year: row.pub_year,
+        issued: row.issued,
+        extent: row.extent,
+        price: row.price,
         ndc10: row.ndc10,
         ndlc: row.ndlc,
+        ndl_bib_id: row.ndl_bib_id,
+        jpno: row.jpno,
+        tohan_marc_no: row.tohan_marc_no,
+        subjects: row.subjects ? (JSON.parse(row.subjects) as string[]) : undefined,
+        categories: row.categories ? (JSON.parse(row.categories) as string[]) : undefined,
         description: row.description,
     }));
 }
