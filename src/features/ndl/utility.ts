@@ -17,29 +17,30 @@ export const convertISBN10to13 = (isbn10: string): string => {
 
 /**
  * Convert BibliographicInfo from DB to NdlItem format
+ * Since BibliographicInfo now uses NDL API naming, conversion is minimal
  */
 function bibliographicInfoToNdlItem(info: BibliographicInfo): NdlItem {
     return {
         title: info.title,
         titleKana: info.title_kana ?? null,
-        link: null,
-        creators: info.authors,
-        creatorsKana: info.authors_kana || [],
+        link: info.link ?? null,
+        creators: info.creators,
+        creatorsKana: info.creators_kana || [],
         publisher: info.publisher,
         pubYear: info.pub_year,
-        issued: null,
-        extent: null,
-        price: null,
-        categories: [],
+        issued: info.issued ?? null,
+        extent: info.extent ?? null,
+        price: info.price ?? null,
+        categories: info.categories || [],
         isbn13: info.isbn,
-        ndlBibId: null,
-        jpno: null,
-        tohanMarcNo: null,
+        ndlBibId: info.ndl_bib_id ?? null,
+        jpno: info.jpno ?? null,
+        tohanMarcNo: info.tohan_marc_no ?? null,
         ndc10: info.ndc10,
         ndlc: info.ndlc,
-        subjects: [],
-        descriptionHtml: null,
-        seeAlso: [],
+        subjects: info.subjects || [],
+        descriptionHtml: info.description ?? null,
+        seeAlso: [], // Not stored in DB
     };
 }
 
@@ -77,17 +78,28 @@ export const NDLsearch = async (
     // Save to cache if DB functions are provided and data is valid
     if (db && upsertBibliographicInfo && result.items && result.items[0]) {
         const item = result.items[0];
-        if (item.isbn13 && item.title) {
+        if (item.title) {
+            // BibliographicInfo now uses NDL API naming, so minimal conversion needed
             const bibInfo: BibliographicInfo = {
-                isbn: item.isbn13,
+                isbn: isbn, // Use request ISBN as cache key, not item.isbn13
                 title: item.title,
                 title_kana: item.titleKana,
-                authors: item.creators,
-                authors_kana: item.creatorsKana,
+                link: item.link,
+                creators: item.creators, // Matches NDL API naming
+                creators_kana: item.creatorsKana, // Matches NDL API naming
                 publisher: item.publisher,
                 pub_year: item.pubYear,
+                issued: item.issued,
+                extent: item.extent,
+                price: item.price,
                 ndc10: item.ndc10,
                 ndlc: item.ndlc,
+                ndl_bib_id: item.ndlBibId,
+                jpno: item.jpno,
+                tohan_marc_no: item.tohanMarcNo,
+                subjects: item.subjects,
+                categories: item.categories,
+                description: item.descriptionHtml,
             };
             try {
                 upsertBibliographicInfo(db, bibInfo);

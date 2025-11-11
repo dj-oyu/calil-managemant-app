@@ -1,17 +1,30 @@
 import { Database } from "bun:sqlite";
+import { existsSync, unlinkSync, renameSync, readdirSync } from "node:fs";
 import { appRoot } from "../../../shared/config/app-paths";
 import path from "node:path";
+import { runMigrations, getCurrentVersion, migrations } from "./migrations";
+import { logger } from "../../../shared/logging/logger";
 
 export type BibliographicRecord = {
     isbn: string;
     title: string;
     title_kana: string | null;
-    authors: string; // JSON array string
-    authors_kana: string | null; // JSON array string
+    link: string | null; // NDL link
+    creators: string; // JSON array string (matches NDL API)
+    creators_kana: string | null; // JSON array string (matches NDL API)
     publisher: string | null;
     pub_year: string | null;
+    issued: string | null; // dcterms:issued
+    extent: string | null; // Page count
+    price: string | null; // Price
     ndc10: string | null;
     ndlc: string | null;
+    ndl_bib_id: string | null; // NDL Bibliographic ID
+    jpno: string | null; // JP number
+    tohan_marc_no: string | null; // TOHAN MARC number
+    subjects: string | null; // JSON array string
+    categories: string | null; // JSON array string
+    description: string | null; // HTML description from NDL
     created_at: string;
     updated_at: string;
 };
@@ -20,16 +33,26 @@ export type BibliographicInfo = {
     isbn: string;
     title: string;
     title_kana?: string | null;
-    authors: string[];
-    authors_kana?: string[];
+    link?: string | null; // NDL link
+    creators: string[]; // Matches NDL API naming
+    creators_kana?: string[]; // Matches NDL API naming
     publisher: string | null;
     pub_year: string | null;
+    issued?: string | null; // dcterms:issued
+    extent?: string | null; // Page count
+    price?: string | null; // Price
     ndc10: string | null;
     ndlc: string | null;
+    ndl_bib_id?: string | null; // NDL Bibliographic ID
+    jpno?: string | null; // JP number
+    tohan_marc_no?: string | null; // TOHAN MARC number
+    subjects?: string[]; // Other subjects
+    categories?: string[]; // Categories
+    description?: string | null; // HTML description from NDL
 };
 
 export type SearchOptions = {
-    query?: string; // Free text search across title, authors, publisher
+    query?: string; // Free text search across title, creators, publisher
     title?: string;
     author?: string;
     publisher?: string;
@@ -45,11 +68,180 @@ export type SearchOptions = {
 let dbInstance: Database | null = null;
 
 /**
+ * Expected schema version (should match the latest migration version)
+ */
+const EXPECTED_SCHEMA_VERSION = migrations.length > 0
+    ? Math.max(...migrations.map(m => m.version))
+    : 0;
+
+/**
+ * Check if database schema is outdated and needs reset
+ * Returns [shouldReset, currentVersion]
+ */
+function shouldResetDatabase(dbPath: string): [boolean, number | null] {
+    if (!existsSync(dbPath)) {
+        return [false, null]; // New database, no reset needed
+    }
+
+    let tempDb: Database | null = null;
+    try {
+        // Open database temporarily to check version
+        tempDb = new Database(dbPath, { readonly: true });
+        const currentVersion = getCurrentVersion(tempDb);
+
+        // Reset if current version is less than expected
+        if (currentVersion < EXPECTED_SCHEMA_VERSION) {
+            logger.info("Database schema is outdated, will reset", {
+                currentVersion,
+                expectedVersion: EXPECTED_SCHEMA_VERSION,
+            });
+            return [true, currentVersion];
+        }
+
+        return [false, currentVersion];
+    } catch (error) {
+        // If we can't read the database, reset it
+        logger.warn("Failed to check database version, will reset", {
+            error: String(error),
+        });
+        return [true, null];
+    } finally {
+        // Ensure database is closed before attempting rename
+        if (tempDb) {
+            try {
+                tempDb.close();
+                // Add delay to ensure Windows releases file handle
+                // Windows can take a significant amount of time to release file handles
+                // especially for SQLite databases with WAL mode or journal files
+                Bun.sleepSync(200);
+            } catch (closeError) {
+                logger.warn("Error closing temporary database", {
+                    error: String(closeError),
+                });
+            }
+        }
+    }
+}
+
+/**
+ * Reset database by renaming the old file and creating a new one
+ * This avoids file locking issues on Windows
+ * Implements retry logic for Windows file locking
+ */
+function resetDatabase(dbPath: string): void {
+    if (!existsSync(dbPath)) {
+        return; // File doesn't exist, nothing to reset
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupPath = `${dbPath}.${timestamp}.old`;
+
+    // Retry logic for Windows file locking issues
+    // Windows can be very slow to release database file handles
+    const maxRetries = 10;
+    const retryDelays = [200, 300, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000]; // Progressive delays in ms
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            if (attempt > 0) {
+                logger.debug(`Retry attempt ${attempt + 1}/${maxRetries} for database reset`, {
+                    delay: retryDelays[attempt - 1],
+                });
+                // Use Bun.sleepSync for synchronous sleep
+                Bun.sleepSync(retryDelays[attempt - 1]!);
+            }
+
+            // Rename instead of delete to avoid locking issues
+            renameSync(dbPath, backupPath);
+            logger.info("Database file renamed for reset", {
+                oldPath: dbPath,
+                newPath: backupPath,
+                attempts: attempt + 1,
+            });
+
+            // Success! Clean up old backups
+            try {
+                const dir = path.dirname(dbPath);
+                const basename = path.basename(dbPath);
+                const oldBackups = readdirSync(dir)
+                    .filter((f: string) => f.startsWith(basename) && f.endsWith(".old"))
+                    .map((f: string) => path.join(dir, f));
+
+                // Keep only the most recent 3 backups
+                if (oldBackups.length > 3) {
+                    oldBackups
+                        .sort()
+                        .slice(0, -3)
+                        .forEach((f: string) => {
+                            try {
+                                unlinkSync(f);
+                                logger.debug("Deleted old backup", { path: f });
+                            } catch {
+                                // Ignore errors when deleting old backups
+                            }
+                        });
+                }
+            } catch {
+                // Ignore errors when cleaning up old backups
+            }
+
+            return; // Success!
+        } catch (error: any) {
+            lastError = error;
+            const errorMsg = String(error);
+
+            // If it's a file locking error (EBUSY), retry
+            if (errorMsg.includes("EBUSY") || errorMsg.includes("resource busy")) {
+                logger.warn(`Database file is locked, will retry`, {
+                    attempt: attempt + 1,
+                    maxRetries,
+                    error: errorMsg,
+                });
+                continue;
+            }
+
+            // For other errors, fail immediately
+            logger.error("Failed to reset database file (non-locking error)", {
+                path: dbPath,
+                error: errorMsg,
+            });
+            throw new Error(
+                `Cannot reset database file: ${error.message}. Path: ${dbPath}`
+            );
+        }
+    }
+
+    // All retries failed
+    logger.error("Failed to reset database file after all retries", {
+        path: dbPath,
+        attempts: maxRetries,
+        error: String(lastError),
+    });
+    throw new Error(
+        `Cannot reset database file after ${maxRetries} attempts: ${lastError?.message}. ` +
+        `Path: ${dbPath}. Please close all applications using this database.`
+    );
+}
+
+/**
  * Get or create database instance (singleton)
+ * Automatically resets database if schema is outdated
  */
 export function getDatabase(): Database {
     if (!dbInstance) {
         const dbPath = path.join(appRoot, "bibliographic.db");
+
+        // Check if database needs reset due to outdated schema
+        const [shouldReset, currentVersion] = shouldResetDatabase(dbPath);
+        if (shouldReset) {
+            logger.info("Resetting database due to schema changes", {
+                currentVersion: currentVersion ?? "unknown",
+                expectedVersion: EXPECTED_SCHEMA_VERSION,
+            });
+            resetDatabase(dbPath);
+        }
 
         dbInstance = new Database(dbPath, { create: true });
         initializeDatabase(dbInstance);
@@ -61,22 +253,85 @@ export function getDatabase(): Database {
  * Initialize database schema
  */
 function initializeDatabase(db: Database): void {
+    // Check if this is a new database by checking if bibliographic_info table exists
+    const tableExists = db
+        .prepare(
+            `SELECT name FROM sqlite_master WHERE type='table' AND name='bibliographic_info'`
+        )
+        .get();
+
+    const isNewDatabase = !tableExists;
+
     // Create bibliographic_info table with search-optimized columns
+    // Note: This creates the table with all columns including NDL metadata
+    // Column names match NDL API naming for consistency
     db.run(`
         CREATE TABLE IF NOT EXISTS bibliographic_info (
             isbn TEXT PRIMARY KEY,
             title TEXT NOT NULL,
             title_kana TEXT,
-            authors TEXT NOT NULL,
-            authors_kana TEXT,
+            link TEXT,
+            creators TEXT NOT NULL,
+            creators_kana TEXT,
             publisher TEXT,
             pub_year TEXT,
+            issued TEXT,
+            extent TEXT,
+            price TEXT,
             ndc10 TEXT,
             ndlc TEXT,
+            ndl_bib_id TEXT,
+            jpno TEXT,
+            tohan_marc_no TEXT,
+            subjects TEXT,
+            categories TEXT,
+            description TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     `);
+
+    // If this is a new database, mark all migrations as applied
+    // to avoid running unnecessary migrations on fresh schema
+    if (isNewDatabase) {
+        logger.info("New database detected, marking all migrations as applied");
+        const migrationTableExists = db
+            .prepare(
+                `SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'`
+            )
+            .get();
+
+        if (!migrationTableExists) {
+            db.run(`
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+        }
+
+        // Mark all migrations as applied
+        const { migrations } = require("./migrations");
+        for (const migration of migrations) {
+            try {
+                db.prepare(`
+                    INSERT OR IGNORE INTO schema_migrations (version, name)
+                    VALUES (?, ?)
+                `).run(migration.version, migration.name);
+            } catch (error) {
+                logger.warn("Failed to mark migration as applied", {
+                    version: migration.version,
+                    name: migration.name,
+                    error: String(error),
+                });
+            }
+        }
+        logger.info("All migrations marked as applied for new database");
+    } else {
+        // For existing databases, run migrations normally
+        runMigrations(db);
+    }
 
     // Create indexes for efficient searching
     db.run(`
@@ -111,13 +366,14 @@ function initializeDatabase(db: Database): void {
 
     // Create FTS5 virtual table for full-text search
     // Using unicode61 tokenizer with remove_diacritics for better Japanese support
+    // Column names match NDL API naming
     db.run(`
         CREATE VIRTUAL TABLE IF NOT EXISTS bibliographic_fts USING fts5(
             isbn UNINDEXED,
             title,
             title_kana,
-            authors,
-            authors_kana,
+            creators,
+            creators_kana,
             publisher,
             content='bibliographic_info',
             content_rowid='rowid',
@@ -134,8 +390,8 @@ function initializeDatabase(db: Database): void {
     db.run(`
         CREATE TRIGGER bibliographic_fts_insert
         AFTER INSERT ON bibliographic_info BEGIN
-            INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
-            VALUES (new.rowid, new.isbn, new.title, new.title_kana, new.authors, new.authors_kana, new.publisher);
+            INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, creators, creators_kana, publisher)
+            VALUES (new.rowid, new.isbn, new.title, new.title_kana, new.creators, new.creators_kana, new.publisher);
         END
     `);
 
@@ -189,39 +445,63 @@ export function upsertBibliographicInfo(
             // 3. Insert new record (INSERT trigger will handle FTS5)
             db.prepare(`
                 INSERT INTO bibliographic_info (
-                    isbn, title, title_kana, authors, authors_kana,
-                    publisher, pub_year, ndc10, ndlc, updated_at
+                    isbn, title, title_kana, link, creators, creators_kana,
+                    publisher, pub_year, issued, extent, price,
+                    ndc10, ndlc, ndl_bib_id, jpno, tohan_marc_no,
+                    subjects, categories, description, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             `).run(
                 info.isbn,
                 info.title,
                 info.title_kana || null,
-                JSON.stringify(info.authors),
-                info.authors_kana ? JSON.stringify(info.authors_kana) : null,
+                info.link || null,
+                JSON.stringify(info.creators),
+                info.creators_kana ? JSON.stringify(info.creators_kana) : null,
                 info.publisher,
                 info.pub_year,
+                info.issued || null,
+                info.extent || null,
+                info.price || null,
                 info.ndc10,
-                info.ndlc
+                info.ndlc,
+                info.ndl_bib_id || null,
+                info.jpno || null,
+                info.tohan_marc_no || null,
+                info.subjects ? JSON.stringify(info.subjects) : null,
+                info.categories ? JSON.stringify(info.categories) : null,
+                info.description || null
             );
         } else {
             // INSERT path: use trigger (works correctly)
             db.prepare(`
                 INSERT INTO bibliographic_info (
-                    isbn, title, title_kana, authors, authors_kana,
-                    publisher, pub_year, ndc10, ndlc, updated_at
+                    isbn, title, title_kana, link, creators, creators_kana,
+                    publisher, pub_year, issued, extent, price,
+                    ndc10, ndlc, ndl_bib_id, jpno, tohan_marc_no,
+                    subjects, categories, description, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             `).run(
                 info.isbn,
                 info.title,
                 info.title_kana || null,
-                JSON.stringify(info.authors),
-                info.authors_kana ? JSON.stringify(info.authors_kana) : null,
+                info.link || null,
+                JSON.stringify(info.creators),
+                info.creators_kana ? JSON.stringify(info.creators_kana) : null,
                 info.publisher,
                 info.pub_year,
+                info.issued || null,
+                info.extent || null,
+                info.price || null,
                 info.ndc10,
-                info.ndlc
+                info.ndlc,
+                info.ndl_bib_id || null,
+                info.jpno || null,
+                info.tohan_marc_no || null,
+                info.subjects ? JSON.stringify(info.subjects) : null,
+                info.categories ? JSON.stringify(info.categories) : null,
+                info.description || null
             );
         }
 
@@ -250,14 +530,24 @@ export function getBibliographicInfo(
         isbn: row.isbn,
         title: row.title,
         title_kana: row.title_kana,
-        authors: JSON.parse(row.authors) as string[],
-        authors_kana: row.authors_kana
-            ? (JSON.parse(row.authors_kana) as string[])
+        link: row.link,
+        creators: JSON.parse(row.creators) as string[],
+        creators_kana: row.creators_kana
+            ? (JSON.parse(row.creators_kana) as string[])
             : undefined,
         publisher: row.publisher,
         pub_year: row.pub_year,
+        issued: row.issued,
+        extent: row.extent,
+        price: row.price,
         ndc10: row.ndc10,
         ndlc: row.ndlc,
+        ndl_bib_id: row.ndl_bib_id,
+        jpno: row.jpno,
+        tohan_marc_no: row.tohan_marc_no,
+        subjects: row.subjects ? (JSON.parse(row.subjects) as string[]) : undefined,
+        categories: row.categories ? (JSON.parse(row.categories) as string[]) : undefined,
+        description: row.description,
     };
 }
 
@@ -280,14 +570,24 @@ export function getBibliographicInfoBatch(
         isbn: row.isbn,
         title: row.title,
         title_kana: row.title_kana,
-        authors: JSON.parse(row.authors) as string[],
-        authors_kana: row.authors_kana
-            ? (JSON.parse(row.authors_kana) as string[])
+        link: row.link,
+        creators: JSON.parse(row.creators) as string[],
+        creators_kana: row.creators_kana
+            ? (JSON.parse(row.creators_kana) as string[])
             : undefined,
         publisher: row.publisher,
         pub_year: row.pub_year,
+        issued: row.issued,
+        extent: row.extent,
+        price: row.price,
         ndc10: row.ndc10,
         ndlc: row.ndlc,
+        ndl_bib_id: row.ndl_bib_id,
+        jpno: row.jpno,
+        tohan_marc_no: row.tohan_marc_no,
+        subjects: row.subjects ? (JSON.parse(row.subjects) as string[]) : undefined,
+        categories: row.categories ? (JSON.parse(row.categories) as string[]) : undefined,
+        description: row.description,
     }));
 }
 
@@ -356,7 +656,7 @@ export function searchBibliographic(
             params.push(`%${title}%`, `%${title}%`);
         }
         if (author) {
-            sql += " AND (authors LIKE ? OR authors_kana LIKE ?)";
+            sql += " AND (creators LIKE ? OR creators_kana LIKE ?)";
             params.push(`%${author}%`, `%${author}%`);
         }
         if (publisher) {
@@ -396,14 +696,24 @@ export function searchBibliographic(
         isbn: row.isbn,
         title: row.title,
         title_kana: row.title_kana,
-        authors: JSON.parse(row.authors) as string[],
-        authors_kana: row.authors_kana
-            ? (JSON.parse(row.authors_kana) as string[])
+        link: row.link,
+        creators: JSON.parse(row.creators) as string[],
+        creators_kana: row.creators_kana
+            ? (JSON.parse(row.creators_kana) as string[])
             : undefined,
         publisher: row.publisher,
         pub_year: row.pub_year,
+        issued: row.issued,
+        extent: row.extent,
+        price: row.price,
         ndc10: row.ndc10,
         ndlc: row.ndlc,
+        ndl_bib_id: row.ndl_bib_id,
+        jpno: row.jpno,
+        tohan_marc_no: row.tohan_marc_no,
+        subjects: row.subjects ? (JSON.parse(row.subjects) as string[]) : undefined,
+        categories: row.categories ? (JSON.parse(row.categories) as string[]) : undefined,
+        description: row.description,
     }));
 }
 
@@ -458,7 +768,7 @@ export function countSearchResults(
             params.push(`%${title}%`, `%${title}%`);
         }
         if (author) {
-            sql += " AND (authors LIKE ? OR authors_kana LIKE ?)";
+            sql += " AND (creators LIKE ? OR creators_kana LIKE ?)";
             params.push(`%${author}%`, `%${author}%`);
         }
         if (publisher) {

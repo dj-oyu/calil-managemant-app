@@ -116,6 +116,9 @@ function createHeaders({
     return headers;
 }
 
+// Singleton token fetch to prevent concurrent requests
+let tokenFetchPromise: Promise<YomitaiTokenResponse> | null = null;
+
 // Function to fetch Yomitai token with cache
 async function fetchYomitaiToken(
     cookie: Cookie,
@@ -129,26 +132,50 @@ async function fetchYomitaiToken(
         return cached;
     }
 
-    // Fetch from API
-    const response = await fetch(
-        `${BASE_URL}/infrastructure/v2/get_yomitai_token`,
-        {
-            headers: createHeaders({ cookie }),
-            method: "GET",
-        },
-    );
-    if (!response.ok) {
-        throw new Error(
-            `Failed to fetch Yomitai token: ${response.statusText}`,
-        );
+    // If a token fetch is already in progress, wait for it
+    if (tokenFetchPromise) {
+        console.log("Token fetch already in progress, waiting...");
+        return await tokenFetchPromise;
     }
-    const data: YomitaiTokenResponse = await response.json();
 
-    // Store in cache
-    setInCache(cacheKey, data);
-    console.log("Fetched and cached new Yomitai token");
+    // Perform the actual token fetch
+    const performFetch = async (): Promise<YomitaiTokenResponse> => {
+        // Double-check cache in case another request completed while we were waiting
+        const cachedAfterWait = getFromCache<YomitaiTokenResponse>(cacheKey);
+        if (cachedAfterWait) {
+            console.log("Using cached Yomitai token (found after wait)");
+            return cachedAfterWait;
+        }
 
-    return data;
+        // Fetch from API
+        const response = await fetch(
+            `${BASE_URL}/infrastructure/v2/get_yomitai_token`,
+            {
+                headers: createHeaders({ cookie }),
+                method: "GET",
+            },
+        );
+        if (!response.ok) {
+            throw new Error(
+                `Failed to fetch Yomitai token: ${response.statusText}`,
+            );
+        }
+        const data: YomitaiTokenResponse = await response.json();
+
+        // Store in cache
+        setInCache(cacheKey, data);
+        console.log("Fetched and cached new Yomitai token");
+
+        return data;
+    };
+
+    try {
+        tokenFetchPromise = performFetch();
+        const result = await tokenFetchPromise;
+        return result;
+    } finally {
+        tokenFetchPromise = null;
+    }
 }
 
 /**

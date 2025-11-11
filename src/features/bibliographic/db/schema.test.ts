@@ -36,12 +36,22 @@ function initTestDatabase(db: Database): void {
             isbn TEXT PRIMARY KEY,
             title TEXT NOT NULL,
             title_kana TEXT,
-            authors TEXT NOT NULL,
-            authors_kana TEXT,
+            link TEXT,
+            creators TEXT NOT NULL,
+            creators_kana TEXT,
             publisher TEXT,
             pub_year TEXT,
+            issued TEXT,
+            extent TEXT,
+            price TEXT,
             ndc10 TEXT,
             ndlc TEXT,
+            ndl_bib_id TEXT,
+            jpno TEXT,
+            tohan_marc_no TEXT,
+            subjects TEXT,
+            categories TEXT,
+            description TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -71,8 +81,8 @@ function initTestDatabase(db: Database): void {
             isbn UNINDEXED,
             title,
             title_kana,
-            authors,
-            authors_kana,
+            creators,
+            creators_kana,
             publisher,
             content='bibliographic_info',
             content_rowid='rowid',
@@ -83,8 +93,8 @@ function initTestDatabase(db: Database): void {
     db.run(`
         CREATE TRIGGER bibliographic_fts_insert
         AFTER INSERT ON bibliographic_info BEGIN
-            INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
-            VALUES (new.rowid, new.isbn, new.title, new.title_kana, new.authors, new.authors_kana, new.publisher);
+            INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, creators, creators_kana, publisher)
+            VALUES (new.rowid, new.isbn, new.title, new.title_kana, new.creators, new.creators_kana, new.publisher);
         END
     `);
 
@@ -99,8 +109,8 @@ function initTestDatabase(db: Database): void {
         CREATE TRIGGER bibliographic_fts_update
         AFTER UPDATE ON bibliographic_info BEGIN
             DELETE FROM bibliographic_fts WHERE rowid = old.rowid;
-            INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
-            VALUES (new.rowid, new.isbn, new.title, new.title_kana, new.authors, new.authors_kana, new.publisher);
+            INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, creators, creators_kana, publisher)
+            VALUES (new.rowid, new.isbn, new.title, new.title_kana, new.creators, new.creators_kana, new.publisher);
         END
     `);
 }
@@ -123,8 +133,8 @@ describe("BibliographicInfo Database", () => {
                 isbn: "9784003101018",
                 title: "吾輩は猫である",
                 title_kana: "ワガハイハネコデアル",
-                authors: ["夏目漱石"],
-                authors_kana: ["ナツメソウセキ"],
+                creators: ["夏目漱石"],
+                creators_kana: ["ナツメソウセキ"],
                 publisher: "岩波書店",
                 pub_year: "2022",
                 ndc10: "913.6",
@@ -136,7 +146,7 @@ describe("BibliographicInfo Database", () => {
             const result = getBibliographicInfo(db, "9784003101018");
             expect(result).not.toBeNull();
             expect(result?.title).toBe("吾輩は猫である");
-            expect(result?.authors).toEqual(["夏目漱石"]);
+            expect(result?.creators).toEqual(["夏目漱石"]);
             expect(result?.publisher).toBe("岩波書店");
         });
 
@@ -144,7 +154,7 @@ describe("BibliographicInfo Database", () => {
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: "吾輩は猫である",
-                authors: ["夏目漱石"],
+                creators: ["夏目漱石"],
                 publisher: "岩波書店",
                 pub_year: "2022",
                 ndc10: "913.6",
@@ -157,21 +167,21 @@ describe("BibliographicInfo Database", () => {
             const updatedInfo: BibliographicInfo = {
                 ...info,
                 title_kana: "ワガハイハネコデアル",
-                authors_kana: ["ナツメソウセキ"],
+                creators_kana: ["ナツメソウセキ"],
             };
 
             upsertBibliographicInfo(db, updatedInfo);
 
             const result = getBibliographicInfo(db, "9784003101018");
             expect(result?.title_kana).toBe("ワガハイハネコデアル");
-            expect(result?.authors_kana).toEqual(["ナツメソウセキ"]);
+            expect(result?.creators_kana).toEqual(["ナツメソウセキ"]);
         });
 
         test("should handle null values", () => {
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: "吾輩は猫である",
-                authors: ["夏目漱石"],
+                creators: ["夏目漱石"],
                 publisher: null,
                 pub_year: null,
                 ndc10: null,
@@ -196,7 +206,7 @@ describe("BibliographicInfo Database", () => {
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: "吾輩は猫である",
-                authors: ["夏目漱石"],
+                creators: ["夏目漱石"],
                 publisher: "岩波書店",
                 pub_year: "2022",
                 ndc10: "913.6",
@@ -217,7 +227,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784003101018",
                     title: "吾輩は猫である",
-                    authors: ["夏目漱石"],
+                    creators: ["夏目漱石"],
                     publisher: "岩波書店",
                     pub_year: "2022",
                     ndc10: "913.6",
@@ -226,7 +236,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784101010014",
                     title: "こころ",
-                    authors: ["夏目漱石"],
+                    creators: ["夏目漱石"],
                     publisher: "新潮社",
                     pub_year: "2021",
                     ndc10: "913.6",
@@ -235,7 +245,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784041003084",
                     title: "羅生門",
-                    authors: ["芥川龍之介"],
+                    creators: ["芥川龍之介"],
                     publisher: "角川書店",
                     pub_year: "2020",
                     ndc10: "913.6",
@@ -275,8 +285,8 @@ describe("BibliographicInfo Database", () => {
                     isbn: "9784003101018",
                     title: "吾輩は猫である",
                     title_kana: "ワガハイハネコデアル",
-                    authors: ["夏目漱石"],
-                    authors_kana: ["ナツメソウセキ"],
+                    creators: ["夏目漱石"],
+                    creators_kana: ["ナツメソウセキ"],
                     publisher: "岩波書店",
                     pub_year: "2022",
                     ndc10: "913.6",
@@ -286,8 +296,8 @@ describe("BibliographicInfo Database", () => {
                     isbn: "9784101010014",
                     title: "こころ",
                     title_kana: "ココロ",
-                    authors: ["夏目漱石"],
-                    authors_kana: ["ナツメソウセキ"],
+                    creators: ["夏目漱石"],
+                    creators_kana: ["ナツメソウセキ"],
                     publisher: "新潮社",
                     pub_year: "2021",
                     ndc10: "913.6",
@@ -297,8 +307,8 @@ describe("BibliographicInfo Database", () => {
                     isbn: "9784041003084",
                     title: "羅生門",
                     title_kana: "ラショウモン",
-                    authors: ["芥川龍之介"],
-                    authors_kana: ["アクタガワリュウノスケ"],
+                    creators: ["芥川龍之介"],
+                    creators_kana: ["アクタガワリュウノスケ"],
                     publisher: "角川書店",
                     pub_year: "2020",
                     ndc10: "913.6",
@@ -387,8 +397,8 @@ describe("BibliographicInfo Database", () => {
                 isbn: "9784567890123",
                 title: "元のタイトル",
                 title_kana: "モトノタイトル",
-                authors: ["元の著者"],
-                authors_kana: ["モトノチョシャ"],
+                creators: ["元の著者"],
+                creators_kana: ["モトノチョシャ"],
                 publisher: "元の出版社",
                 pub_year: "2020",
                 ndc10: "000",
@@ -406,7 +416,7 @@ describe("BibliographicInfo Database", () => {
             const updatedInfo: BibliographicInfo = {
                 ...initialInfo,
                 title: "更新されたタイトル",
-                authors: ["更新された著者"],
+                creators: ["更新された著者"],
             };
 
             upsertBibliographicInfo(db, updatedInfo);
@@ -414,7 +424,7 @@ describe("BibliographicInfo Database", () => {
             // Verify FTS5 index was updated correctly
             const afterUpdateSearch = searchBibliographic(db, { query: "更新された著者" });
             expect(afterUpdateSearch).toHaveLength(1);
-            expect(afterUpdateSearch[0].authors).toEqual(["更新された著者"]);
+            expect(afterUpdateSearch[0].creators).toEqual(["更新された著者"]);
 
             // Old data should NOT be found (this fails in bun:sqlite v1.3.2)
             const oldDataSearch = searchBibliographic(db, { query: "元の著者" });
@@ -428,7 +438,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784003101018",
                     title: "吾輩は猫である",
-                    authors: ["夏目漱石"],
+                    creators: ["夏目漱石"],
                     publisher: "岩波書店",
                     pub_year: "2022",
                     ndc10: "913.6",
@@ -437,7 +447,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784101010014",
                     title: "こころ",
-                    authors: ["夏目漱石"],
+                    creators: ["夏目漱石"],
                     publisher: "新潮社",
                     pub_year: "2021",
                     ndc10: "913.6",
@@ -446,7 +456,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784041003084",
                     title: "羅生門",
-                    authors: ["芥川龍之介"],
+                    creators: ["芥川龍之介"],
                     publisher: "角川書店",
                     pub_year: "2020",
                     ndc10: "913.6",
@@ -487,7 +497,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784003101018",
                     title: "吾輩は猫である",
-                    authors: ["夏目漱石"],
+                    creators: ["夏目漱石"],
                     publisher: "岩波書店",
                     pub_year: "2022",
                     ndc10: "913.6",
@@ -496,7 +506,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784101010014",
                     title: "こころ",
-                    authors: ["夏目漱石"],
+                    creators: ["夏目漱石"],
                     publisher: "新潮社",
                     pub_year: "2021",
                     ndc10: "913.6",
@@ -505,7 +515,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784000000001",
                     title: "数学の本",
-                    authors: ["数学太郎"],
+                    creators: ["数学太郎"],
                     publisher: "数学出版",
                     pub_year: "2023",
                     ndc10: "410",
@@ -533,7 +543,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784003101018",
                     title: "吾輩は猫である",
-                    authors: ["夏目漱石"],
+                    creators: ["夏目漱石"],
                     publisher: "岩波書店",
                     pub_year: "2022",
                     ndc10: "913.6",
@@ -542,7 +552,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784000000001",
                     title: "数学の本",
-                    authors: ["数学太郎"],
+                    creators: ["数学太郎"],
                     publisher: "数学出版",
                     pub_year: "2023",
                     ndc10: "410",
@@ -570,7 +580,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784003101018",
                     title: "吾輩は猫である",
-                    authors: ["夏目漱石"],
+                    creators: ["夏目漱石"],
                     publisher: "岩波書店",
                     pub_year: "2022",
                     ndc10: "913.6",
@@ -579,7 +589,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784101010014",
                     title: "こころ",
-                    authors: ["夏目漱石"],
+                    creators: ["夏目漱石"],
                     publisher: "新潮社",
                     pub_year: "2021",
                     ndc10: "913.6",
@@ -588,7 +598,7 @@ describe("BibliographicInfo Database", () => {
                 {
                     isbn: "9784041003084",
                     title: "羅生門",
-                    authors: ["芥川龍之介"],
+                    creators: ["芥川龍之介"],
                     publisher: "角川書店",
                     pub_year: "2020",
                     ndc10: "913.6",
@@ -611,7 +621,7 @@ describe("BibliographicInfo Database", () => {
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: "吾輩は猫である",
-                authors: ["夏目漱石"],
+                creators: ["夏目漱石"],
                 publisher: "岩波書店",
                 pub_year: "2022",
                 ndc10: "913.6",
@@ -637,8 +647,8 @@ describe("BibliographicInfo Database", () => {
                     isbn UNINDEXED,
                     title,
                     title_kana,
-                    authors,
-                    authors_kana,
+                    creators,
+                    creators_kana,
                     publisher,
                     content='bibliographic_info',
                     content_rowid='rowid',
@@ -655,7 +665,7 @@ describe("BibliographicInfo Database", () => {
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: "吾輩は猫である",
-                authors: ["夏目漱石"],
+                creators: ["夏目漱石"],
                 publisher: "岩波書店",
                 pub_year: "2022",
                 ndc10: "913.6",
@@ -682,7 +692,7 @@ describe("BibliographicInfo Database", () => {
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: "吾輩は猫である",
-                authors: [""],
+                creators: [""],
                 publisher: "",
                 pub_year: "",
                 ndc10: "",
@@ -693,14 +703,14 @@ describe("BibliographicInfo Database", () => {
 
             const result = getBibliographicInfo(db, "9784003101018");
             expect(result?.publisher).toBe("");
-            expect(result?.authors).toEqual([""]);
+            expect(result?.creators).toEqual([""]);
         });
 
         test("should handle special characters in text", () => {
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: "Title with \"quotes\" and 'apostrophes' & <tags>",
-                authors: ["Author's Name", "名前（なまえ）"],
+                creators: ["Author's Name", "名前（なまえ）"],
                 publisher: "Publisher & Co.",
                 pub_year: "2022",
                 ndc10: "913.6",
@@ -711,17 +721,17 @@ describe("BibliographicInfo Database", () => {
 
             const result = getBibliographicInfo(db, "9784003101018");
             expect(result?.title).toBe("Title with \"quotes\" and 'apostrophes' & <tags>");
-            expect(result?.authors).toContain("名前（なまえ）");
+            expect(result?.creators).toContain("名前（なまえ）");
         });
 
         test("should handle very long strings", () => {
             const longTitle = "あ".repeat(1000);
-            const longAuthor = "い".repeat(500);
+            const longCreator = "い".repeat(500);
 
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: longTitle,
-                authors: [longAuthor],
+                creators: [longCreator],
                 publisher: "出版社",
                 pub_year: "2022",
                 ndc10: "913.6",
@@ -732,15 +742,15 @@ describe("BibliographicInfo Database", () => {
 
             const result = getBibliographicInfo(db, "9784003101018");
             expect(result?.title.length).toBe(1000);
-            expect(result?.authors[0].length).toBe(500);
+            expect(result?.creators[0].length).toBe(500);
         });
 
-        test("should handle multiple authors array", () => {
+        test("should handle multiple creators array", () => {
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: "共著の本",
-                authors: ["著者1", "著者2", "著者3", "著者4", "著者5"],
-                authors_kana: ["チョシャ1", "チョシャ2", "チョシャ3", "チョシャ4", "チョシャ5"],
+                creators: ["著者1", "著者2", "著者3", "著者4", "著者5"],
+                creators_kana: ["チョシャ1", "チョシャ2", "チョシャ3", "チョシャ4", "チョシャ5"],
                 publisher: "出版社",
                 pub_year: "2022",
                 ndc10: "913.6",
@@ -750,15 +760,15 @@ describe("BibliographicInfo Database", () => {
             upsertBibliographicInfo(db, info);
 
             const result = getBibliographicInfo(db, "9784003101018");
-            expect(result?.authors).toHaveLength(5);
-            expect(result?.authors_kana).toHaveLength(5);
+            expect(result?.creators).toHaveLength(5);
+            expect(result?.creators_kana).toHaveLength(5);
         });
 
         test("should handle Unicode characters (emoji, rare kanji)", () => {
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: "📚本のタイトル🎌",
-                authors: ["𠮷田太郎", "髙橋花子"],
+                creators: ["𠮷田太郎", "髙橋花子"],
                 publisher: "🏢出版社",
                 pub_year: "2022",
                 ndc10: "913.6",
@@ -769,7 +779,7 @@ describe("BibliographicInfo Database", () => {
 
             const result = getBibliographicInfo(db, "9784003101018");
             expect(result?.title).toBe("📚本のタイトル🎌");
-            expect(result?.authors).toContain("𠮷田太郎");
+            expect(result?.creators).toContain("𠮷田太郎");
         });
     });
 
@@ -780,8 +790,8 @@ describe("BibliographicInfo Database", () => {
                     isbn: "9784003101018",
                     title: "吾輩は猫である",
                     title_kana: "ワガハイハネコデアル",
-                    authors: ["夏目漱石"],
-                    authors_kana: ["ナツメソウセキ"],
+                    creators: ["夏目漱石"],
+                    creators_kana: ["ナツメソウセキ"],
                     publisher: "岩波書店",
                     pub_year: "2022",
                     ndc10: "913.6",
@@ -791,8 +801,8 @@ describe("BibliographicInfo Database", () => {
                     isbn: "9784101010014",
                     title: "こころ",
                     title_kana: "ココロ",
-                    authors: ["夏目漱石"],
-                    authors_kana: ["ナツメソウセキ"],
+                    creators: ["夏目漱石"],
+                    creators_kana: ["ナツメソウセキ"],
                     publisher: "新潮社",
                     pub_year: "2021",
                     ndc10: "913.6",
@@ -802,8 +812,8 @@ describe("BibliographicInfo Database", () => {
                     isbn: "9784041003084",
                     title: "羅生門・鼻",
                     title_kana: "ラショウモン・ハナ",
-                    authors: ["芥川龍之介"],
-                    authors_kana: ["アクタガワリュウノスケ"],
+                    creators: ["芥川龍之介"],
+                    creators_kana: ["アクタガワリュウノスケ"],
                     publisher: "角川書店",
                     pub_year: "2020",
                     ndc10: "913.6",
@@ -843,7 +853,7 @@ describe("BibliographicInfo Database", () => {
                 books.push({
                     isbn: `978400000${i.toString().padStart(4, "0")}`,
                     title: `テスト本${i}`,
-                    authors: [`著者${i}`],
+                    creators: [`著者${i}`],
                     publisher: "テスト出版社",
                     pub_year: "2022",
                     ndc10: "913.6",
@@ -873,7 +883,7 @@ describe("BibliographicInfo Database", () => {
                 books.push({
                     isbn: `978400000${i.toString().padStart(4, "0")}`,
                     title: `テスト本${i}`,
-                    authors: [`著者${i}`],
+                    creators: [`著者${i}`],
                     publisher: "テスト出版社",
                     pub_year: "2022",
                     ndc10: "913.6",
@@ -906,7 +916,7 @@ describe("BibliographicInfo Database", () => {
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: "吾輩は猫である",
-                authors: ["夏目漱石"],
+                creators: ["夏目漱石"],
                 publisher: "岩波書店",
                 pub_year: "2022",
                 ndc10: "913.6",
@@ -929,7 +939,7 @@ describe("BibliographicInfo Database", () => {
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: "初期タイトル",
-                authors: ["初期著者"],
+                creators: ["初期著者"],
                 publisher: "初期出版社",
                 pub_year: "2020",
                 ndc10: "913.6",
@@ -946,7 +956,7 @@ describe("BibliographicInfo Database", () => {
             upsertBibliographicInfo(db, {
                 ...info,
                 title: "更新後タイトル",
-                authors: ["更新後著者"],
+                creators: ["更新後著者"],
             });
 
             // Should only find updated version

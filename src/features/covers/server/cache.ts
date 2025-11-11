@@ -38,16 +38,26 @@ function addToNotFoundCache(isbn: string): void {
 // Initialize cache directory
 export async function initCoverCache() {
     const existed = existsSync(CACHE_DIR);
+    logger.info("Initializing cover cache", {
+        path: CACHE_DIR,
+        exists: existed,
+    });
     await ensureDir(CACHE_DIR);
-    if (!existed) {
-        logger.info("Cover cache directory created", { path: CACHE_DIR });
-    }
+    const nowExists = existsSync(CACHE_DIR);
+    logger.info("Cover cache directory initialized", {
+        path: CACHE_DIR,
+        existed,
+        nowExists,
+        createdNew: !existed && nowExists,
+    });
 }
 
 // Get cached cover or fetch from NDL
 export async function getCoverImage(
     isbn: string,
 ): Promise<{ path: string; contentType: string } | null> {
+    logger.debug("getCoverImage called", { isbn, cacheDir: CACHE_DIR });
+
     // Check negative cache first (known 404s)
     if (isNotFoundCached(isbn)) {
         logger.debug("Cover known to not exist (negative cache hit)", { isbn });
@@ -55,6 +65,7 @@ export async function getCoverImage(
     }
 
     const cachePath = path.join(CACHE_DIR, `${isbn}.jpg`);
+    logger.debug("Cache path resolved", { isbn, cachePath });
 
     // Check positive cache (actual image file)
     if (existsSync(cachePath)) {
@@ -66,11 +77,15 @@ export async function getCoverImage(
     }
 
     // Fetch from NDL
-    logger.debug("Fetching cover from NDL", { isbn });
+    const ndlUrl = `https://ndlsearch.ndl.go.jp/thumbnail/${isbn}.jpg`;
+    logger.debug("Fetching cover from NDL", { isbn, url: ndlUrl });
     try {
-        const response = await fetch(
-            `https://ndlsearch.ndl.go.jp/thumbnail/${isbn}.jpg`,
-        );
+        const response = await fetch(ndlUrl);
+        logger.debug("NDL response received", {
+            isbn,
+            status: response.status,
+            ok: response.ok,
+        });
 
         if (!response.ok) {
             if (response.status === 404) {
@@ -87,14 +102,37 @@ export async function getCoverImage(
         }
 
         const arrayBuffer = await response.arrayBuffer();
-
-        // Cache the image
-        await ensureDir(path.dirname(cachePath));
-        await Bun.write(cachePath, arrayBuffer);
-        logger.info("Cover image cached", {
+        logger.debug("Image data received from NDL", {
             isbn,
             size: arrayBuffer.byteLength,
         });
+
+        // Cache the image
+        try {
+            logger.debug("Attempting to write image to cache", {
+                isbn,
+                path: cachePath,
+                size: arrayBuffer.byteLength,
+                cacheDir: CACHE_DIR,
+                cacheDirExists: existsSync(CACHE_DIR),
+            });
+            await Bun.write(cachePath, arrayBuffer);
+            const written = existsSync(cachePath);
+            logger.info("Cover image cached", {
+                isbn,
+                path: cachePath,
+                size: arrayBuffer.byteLength,
+                fileExists: written,
+            });
+        } catch (writeError) {
+            logger.error("Failed to write cover image to cache", {
+                isbn,
+                path: cachePath,
+                error: String(writeError),
+                errorStack: writeError instanceof Error ? writeError.stack : undefined,
+            });
+            throw writeError;
+        }
 
         return {
             path: cachePath,

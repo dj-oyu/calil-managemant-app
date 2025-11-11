@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { fileURLToPath } from "node:url";
 import { logger } from "../../shared/logging/logger";
 import { getCacheHeaders } from "../utils/cache-headers";
 import { isDevelopment } from "../utils/environment";
@@ -107,9 +108,11 @@ staticRoutes.get("/public/:path{.+\\.js$}", async (c) => {
         moduleDir,
     );
 
+    const tsFilePath = fileURLToPath(tsUrl);
     logger.debug("Transpiling request", {
         path,
         tsUrl: tsUrl.href,
+        tsFilePath,
         isCompiledBinary,
     });
 
@@ -129,7 +132,7 @@ staticRoutes.get("/public/:path{.+\\.js$}", async (c) => {
         // Development: No minification, no splitting
         // Production: Full optimizations
         const transpiled = await Bun.build({
-            entrypoints: [tsUrl.pathname],
+            entrypoints: [tsFilePath],
             target: "browser",
             minify: isDevelopment
                 ? false
@@ -170,6 +173,7 @@ staticRoutes.get("/public/:path{.+\\.js$}", async (c) => {
         logger.error("Error transpiling TypeScript", {
             path,
             tsUrl: tsUrl.href,
+            tsFilePath,
             error: String(error),
         });
         return c.text("Internal Server Error", 500);
