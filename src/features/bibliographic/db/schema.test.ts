@@ -26,8 +26,18 @@ function createTestDatabase(): Database {
 function cleanupTestDatabase(db: Database): void {
     const filename = db.filename;
     db.close();
+
+    // Windows環境ではファイルハンドルの解放に時間がかかる場合があるため、
+    // 削除に失敗してもエラーを無視する（一時ファイルはOSが後でクリーンアップ）
     if (filename && filename !== ":memory:" && existsSync(filename)) {
-        unlinkSync(filename);
+        try {
+            // 短い遅延を入れてファイルハンドルの解放を待つ
+            Bun.sleepSync(10);
+            unlinkSync(filename);
+        } catch (error) {
+            // Windows環境でのファイルロックエラーを無視
+            // console.warn(`Failed to delete test database: ${filename}`, error);
+        }
     }
 }
 
