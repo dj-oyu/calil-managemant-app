@@ -253,6 +253,15 @@ export function getDatabase(): Database {
  * Initialize database schema
  */
 function initializeDatabase(db: Database): void {
+    // Check if this is a new database by checking if bibliographic_info table exists
+    const tableExists = db
+        .prepare(
+            `SELECT name FROM sqlite_master WHERE type='table' AND name='bibliographic_info'`
+        )
+        .get();
+
+    const isNewDatabase = !tableExists;
+
     // Create bibliographic_info table with search-optimized columns
     // Note: This creates the table with all columns including NDL metadata
     // Column names match NDL API naming for consistency
@@ -282,8 +291,47 @@ function initializeDatabase(db: Database): void {
         )
     `);
 
-    // Run database migrations for existing tables
-    runMigrations(db);
+    // If this is a new database, mark all migrations as applied
+    // to avoid running unnecessary migrations on fresh schema
+    if (isNewDatabase) {
+        logger.info("New database detected, marking all migrations as applied");
+        const migrationTableExists = db
+            .prepare(
+                `SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'`
+            )
+            .get();
+
+        if (!migrationTableExists) {
+            db.run(`
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+        }
+
+        // Mark all migrations as applied
+        const { migrations } = require("./migrations");
+        for (const migration of migrations) {
+            try {
+                db.prepare(`
+                    INSERT OR IGNORE INTO schema_migrations (version, name)
+                    VALUES (?, ?)
+                `).run(migration.version, migration.name);
+            } catch (error) {
+                logger.warn("Failed to mark migration as applied", {
+                    version: migration.version,
+                    name: migration.name,
+                    error: String(error),
+                });
+            }
+        }
+        logger.info("All migrations marked as applied for new database");
+    } else {
+        // For existing databases, run migrations normally
+        runMigrations(db);
+    }
 
     // Create indexes for efficient searching
     db.run(`
