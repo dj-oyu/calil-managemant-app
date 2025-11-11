@@ -6,13 +6,11 @@ import { logger } from '../shared/logger';
 
 /**
  * Valid island type identifiers that can be used in data-island attribute
- * @typedef {'book-detail' | 'cover-image' | 'tab-navigation'} IslandType
  */
 type IslandType = 'book-detail' | 'cover-image' | 'tab-navigation';
 
 /**
  * Constructor signature for Island classes
- * @typedef {new (root: HTMLElement) => Island} IslandConstructor
  */
 type IslandConstructor = new (root: HTMLElement) => Island;
 
@@ -20,7 +18,6 @@ type IslandConstructor = new (root: HTMLElement) => Island;
  * Island registry - maps island types to their constructors
  *
  * @const
- * @type {Record<IslandType, IslandConstructor>}
  * @remarks
  * Add new island types here when creating new island components
  *

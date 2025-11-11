@@ -1,8 +1,13 @@
-// Centralized logging system with in-memory storage
+import {
+    formatTimestamp,
+    LEVEL_ICONS,
+    LEVEL_TO_CONSOLE_METHOD,
+    type LogLevel,
+} from './common';
 
-type LogLevel = 'info' | 'warn' | 'error' | 'debug';
+export type { LogLevel };
 
-interface LogEntry {
+export interface LogEntry {
     timestamp: Date;
     level: LogLevel;
     message: string;
@@ -28,12 +33,13 @@ class Logger {
             this.logs.shift();
         }
 
-        // Also output to console
+        // Also output to console using appropriate method
+        const method = LEVEL_TO_CONSOLE_METHOD[level];
         const prefix = `[${level.toUpperCase()}]`;
         if (data !== undefined) {
-            console.log(prefix, message, data);
+            (console[method] as typeof console.log)(prefix, message, data);
         } else {
-            console.log(prefix, message);
+            (console[method] as typeof console.log)(prefix, message);
         }
     }
 
@@ -68,13 +74,8 @@ class Logger {
     formatForDisplay(): string {
         return this.logs
             .map((entry) => {
-                const time = entry.timestamp.toISOString().substring(11, 23);
-                const levelIcon = {
-                    info: 'ℹ️',
-                    warn: '⚠️',
-                    error: '❌',
-                    debug: '🔍',
-                }[entry.level];
+                const time = formatTimestamp(entry.timestamp);
+                const levelIcon = LEVEL_ICONS[entry.level];
 
                 let output = `${time} ${levelIcon} ${entry.message}`;
                 if (entry.data !== undefined) {
