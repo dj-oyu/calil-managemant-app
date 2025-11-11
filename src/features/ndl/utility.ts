@@ -17,14 +17,15 @@ export const convertISBN10to13 = (isbn10: string): string => {
 
 /**
  * Convert BibliographicInfo from DB to NdlItem format
+ * Since BibliographicInfo now uses NDL API naming, conversion is minimal
  */
 function bibliographicInfoToNdlItem(info: BibliographicInfo): NdlItem {
     return {
         title: info.title,
         titleKana: info.title_kana ?? null,
         link: info.link ?? null,
-        creators: info.authors,
-        creatorsKana: info.authors_kana || [],
+        creators: info.creators,
+        creatorsKana: info.creators_kana || [],
         publisher: info.publisher,
         pubYear: info.pub_year,
         issued: info.issued ?? null,
@@ -39,7 +40,7 @@ function bibliographicInfoToNdlItem(info: BibliographicInfo): NdlItem {
         ndlc: info.ndlc,
         subjects: info.subjects || [],
         descriptionHtml: info.description ?? null,
-        seeAlso: [],
+        seeAlso: [], // Not stored in DB
     };
 }
 
@@ -78,13 +79,14 @@ export const NDLsearch = async (
     if (db && upsertBibliographicInfo && result.items && result.items[0]) {
         const item = result.items[0];
         if (item.title) {
+            // BibliographicInfo now uses NDL API naming, so minimal conversion needed
             const bibInfo: BibliographicInfo = {
                 isbn: isbn, // Use request ISBN as cache key, not item.isbn13
                 title: item.title,
                 title_kana: item.titleKana,
                 link: item.link,
-                authors: item.creators,
-                authors_kana: item.creatorsKana,
+                creators: item.creators, // Matches NDL API naming
+                creators_kana: item.creatorsKana, // Matches NDL API naming
                 publisher: item.publisher,
                 pub_year: item.pubYear,
                 issued: item.issued,

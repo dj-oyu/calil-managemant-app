@@ -10,8 +10,8 @@ export type BibliographicRecord = {
     title: string;
     title_kana: string | null;
     link: string | null; // NDL link
-    authors: string; // JSON array string
-    authors_kana: string | null; // JSON array string
+    creators: string; // JSON array string (matches NDL API)
+    creators_kana: string | null; // JSON array string (matches NDL API)
     publisher: string | null;
     pub_year: string | null;
     issued: string | null; // dcterms:issued
@@ -34,8 +34,8 @@ export type BibliographicInfo = {
     title: string;
     title_kana?: string | null;
     link?: string | null; // NDL link
-    authors: string[];
-    authors_kana?: string[];
+    creators: string[]; // Matches NDL API naming
+    creators_kana?: string[]; // Matches NDL API naming
     publisher: string | null;
     pub_year: string | null;
     issued?: string | null; // dcterms:issued
@@ -207,15 +207,15 @@ export function getDatabase(): Database {
 function initializeDatabase(db: Database): void {
     // Create bibliographic_info table with search-optimized columns
     // Note: This creates the table with all columns including NDL metadata
-    // For existing databases, migrations will add missing columns
+    // Column names match NDL API naming for consistency
     db.run(`
         CREATE TABLE IF NOT EXISTS bibliographic_info (
             isbn TEXT PRIMARY KEY,
             title TEXT NOT NULL,
             title_kana TEXT,
             link TEXT,
-            authors TEXT NOT NULL,
-            authors_kana TEXT,
+            creators TEXT NOT NULL,
+            creators_kana TEXT,
             publisher TEXT,
             pub_year TEXT,
             issued TEXT,
@@ -270,13 +270,14 @@ function initializeDatabase(db: Database): void {
 
     // Create FTS5 virtual table for full-text search
     // Using unicode61 tokenizer with remove_diacritics for better Japanese support
+    // Column names match NDL API naming
     db.run(`
         CREATE VIRTUAL TABLE IF NOT EXISTS bibliographic_fts USING fts5(
             isbn UNINDEXED,
             title,
             title_kana,
-            authors,
-            authors_kana,
+            creators,
+            creators_kana,
             publisher,
             content='bibliographic_info',
             content_rowid='rowid',
@@ -293,8 +294,8 @@ function initializeDatabase(db: Database): void {
     db.run(`
         CREATE TRIGGER bibliographic_fts_insert
         AFTER INSERT ON bibliographic_info BEGIN
-            INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
-            VALUES (new.rowid, new.isbn, new.title, new.title_kana, new.authors, new.authors_kana, new.publisher);
+            INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, creators, creators_kana, publisher)
+            VALUES (new.rowid, new.isbn, new.title, new.title_kana, new.creators, new.creators_kana, new.publisher);
         END
     `);
 
@@ -348,7 +349,7 @@ export function upsertBibliographicInfo(
             // 3. Insert new record (INSERT trigger will handle FTS5)
             db.prepare(`
                 INSERT INTO bibliographic_info (
-                    isbn, title, title_kana, link, authors, authors_kana,
+                    isbn, title, title_kana, link, creators, creators_kana,
                     publisher, pub_year, issued, extent, price,
                     ndc10, ndlc, ndl_bib_id, jpno, tohan_marc_no,
                     subjects, categories, description, updated_at
@@ -359,8 +360,8 @@ export function upsertBibliographicInfo(
                 info.title,
                 info.title_kana || null,
                 info.link || null,
-                JSON.stringify(info.authors),
-                info.authors_kana ? JSON.stringify(info.authors_kana) : null,
+                JSON.stringify(info.creators),
+                info.creators_kana ? JSON.stringify(info.creators_kana) : null,
                 info.publisher,
                 info.pub_year,
                 info.issued || null,
@@ -379,7 +380,7 @@ export function upsertBibliographicInfo(
             // INSERT path: use trigger (works correctly)
             db.prepare(`
                 INSERT INTO bibliographic_info (
-                    isbn, title, title_kana, link, authors, authors_kana,
+                    isbn, title, title_kana, link, creators, creators_kana,
                     publisher, pub_year, issued, extent, price,
                     ndc10, ndlc, ndl_bib_id, jpno, tohan_marc_no,
                     subjects, categories, description, updated_at
@@ -390,8 +391,8 @@ export function upsertBibliographicInfo(
                 info.title,
                 info.title_kana || null,
                 info.link || null,
-                JSON.stringify(info.authors),
-                info.authors_kana ? JSON.stringify(info.authors_kana) : null,
+                JSON.stringify(info.creators),
+                info.creators_kana ? JSON.stringify(info.creators_kana) : null,
                 info.publisher,
                 info.pub_year,
                 info.issued || null,
@@ -434,9 +435,9 @@ export function getBibliographicInfo(
         title: row.title,
         title_kana: row.title_kana,
         link: row.link,
-        authors: JSON.parse(row.authors) as string[],
-        authors_kana: row.authors_kana
-            ? (JSON.parse(row.authors_kana) as string[])
+        creators: JSON.parse(row.creators) as string[],
+        creators_kana: row.creators_kana
+            ? (JSON.parse(row.creators_kana) as string[])
             : undefined,
         publisher: row.publisher,
         pub_year: row.pub_year,
@@ -474,9 +475,9 @@ export function getBibliographicInfoBatch(
         title: row.title,
         title_kana: row.title_kana,
         link: row.link,
-        authors: JSON.parse(row.authors) as string[],
-        authors_kana: row.authors_kana
-            ? (JSON.parse(row.authors_kana) as string[])
+        creators: JSON.parse(row.creators) as string[],
+        creators_kana: row.creators_kana
+            ? (JSON.parse(row.creators_kana) as string[])
             : undefined,
         publisher: row.publisher,
         pub_year: row.pub_year,
@@ -600,9 +601,9 @@ export function searchBibliographic(
         title: row.title,
         title_kana: row.title_kana,
         link: row.link,
-        authors: JSON.parse(row.authors) as string[],
-        authors_kana: row.authors_kana
-            ? (JSON.parse(row.authors_kana) as string[])
+        creators: JSON.parse(row.creators) as string[],
+        creators_kana: row.creators_kana
+            ? (JSON.parse(row.creators_kana) as string[])
             : undefined,
         publisher: row.publisher,
         pub_year: row.pub_year,

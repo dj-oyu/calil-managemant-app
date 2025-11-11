@@ -65,6 +65,32 @@ export const migrations: Migration[] = [
             }
         },
     },
+    {
+        version: 3,
+        name: "rename_columns_to_ndl_naming",
+        up: (db: Database) => {
+            // Rename columns to match NDL API naming for consistency
+            // SQLite supports ALTER TABLE RENAME COLUMN since 3.25.0
+            const columnRenames = [
+                { from: "authors", to: "creators" },
+                { from: "authors_kana", to: "creators_kana" },
+            ];
+
+            for (const rename of columnRenames) {
+                try {
+                    db.run(`ALTER TABLE bibliographic_info RENAME COLUMN ${rename.from} TO ${rename.to}`);
+                    logger.info(`Migration: Renamed ${rename.from} to ${rename.to}`);
+                } catch (error) {
+                    const errorMsg = String(error);
+                    // Ignore if column doesn't exist or already renamed
+                    if (!errorMsg.includes("no such column") && !errorMsg.includes("duplicate column")) {
+                        throw error;
+                    }
+                    logger.debug(`Migration: Column rename ${rename.from} → ${rename.to} skipped`);
+                }
+            }
+        },
+    },
 ];
 
 /**
