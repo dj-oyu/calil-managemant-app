@@ -16,8 +16,6 @@ import {
     type SearchOptions,
 } from "../../features/bibliographic/db/schema";
 
-const db = getDatabase();
-
 export const bibliographicRoutes = new Hono();
 
 // APIエンドポイント: 書誌情報のJSONダウンロード
@@ -51,7 +49,7 @@ bibliographicRoutes.get("/download/bibliographic/:listType", async (c) => {
         });
 
         // Get existing bibliographic info from database
-        const existingInfo = getBibliographicInfoBatch(db, isbn13List);
+        const existingInfo = getBibliographicInfoBatch(getDatabase(), isbn13List);
         const existingIsbnSet = new Set(existingInfo.map((info) => info.isbn));
 
         const cacheHitCount = existingInfo.length;
@@ -86,7 +84,7 @@ bibliographicRoutes.get("/download/bibliographic/:listType", async (c) => {
                     // NDLsearch now handles caching internally
                     const detail = await NDLsearch(
                         isbn,
-                        db,
+                        getDatabase(),
                         getBibliographicInfo,
                         upsertBibliographicInfo,
                     );
@@ -223,8 +221,8 @@ bibliographicRoutes.get("/search/bibliographic", async (c) => {
             offset,
         };
 
-        const results = searchBibliographic(db, searchOptions);
-        const totalCount = countSearchResults(db, searchOptions);
+        const results = searchBibliographic(getDatabase(), searchOptions);
+        const totalCount = countSearchResults(getDatabase(), searchOptions);
 
         logger.info("API: Search completed", {
             resultsCount: results.length,
@@ -253,9 +251,9 @@ bibliographicRoutes.get("/search/filters", async (c) => {
     logger.info("API: Fetching search filters");
 
     try {
-        const ndc10Classifications = getAllNDC10Classifications(db);
-        const ndlcClassifications = getAllNDLCClassifications(db);
-        const publishers = getAllPublishers(db);
+        const ndc10Classifications = getAllNDC10Classifications(getDatabase());
+        const ndlcClassifications = getAllNDLCClassifications(getDatabase());
+        const publishers = getAllPublishers(getDatabase());
 
         return c.json({
             ndc10: ndc10Classifications,

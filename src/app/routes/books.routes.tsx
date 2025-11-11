@@ -19,8 +19,6 @@ import {
     upsertBibliographicInfo,
 } from "../../features/bibliographic/db/schema";
 
-const db = getDatabase();
-
 export const booksRoutes = new Hono();
 
 // APIエンドポイント: 書籍リスト取得（ページネーション対応ストリーミング版）
@@ -180,7 +178,7 @@ booksRoutes.get("/books/:isbn", async (c) => {
     // Search with DB cache support
     const detail = await NDLsearch(
         isbn,
-        db,
+        getDatabase(),
         getBibliographicInfo,
         upsertBibliographicInfo,
     );
