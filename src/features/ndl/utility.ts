@@ -38,7 +38,7 @@ function bibliographicInfoToNdlItem(info: BibliographicInfo): NdlItem {
         ndc10: info.ndc10,
         ndlc: info.ndlc,
         subjects: [],
-        descriptionHtml: null,
+        descriptionHtml: info.description ?? null,
         seeAlso: [],
     };
 }
@@ -88,6 +88,7 @@ export const NDLsearch = async (
                 pub_year: item.pubYear,
                 ndc10: item.ndc10,
                 ndlc: item.ndlc,
+                description: item.descriptionHtml,
             };
             try {
                 upsertBibliographicInfo(db, bibInfo);

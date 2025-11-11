@@ -12,6 +12,7 @@ export type BibliographicRecord = {
     pub_year: string | null;
     ndc10: string | null;
     ndlc: string | null;
+    description: string | null; // HTML description from NDL
     created_at: string;
     updated_at: string;
 };
@@ -26,6 +27,7 @@ export type BibliographicInfo = {
     pub_year: string | null;
     ndc10: string | null;
     ndlc: string | null;
+    description?: string | null; // HTML description from NDL
 };
 
 export type SearchOptions = {
@@ -73,10 +75,18 @@ function initializeDatabase(db: Database): void {
             pub_year TEXT,
             ndc10 TEXT,
             ndlc TEXT,
+            description TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     `);
+
+    // Add description column to existing tables (migration)
+    try {
+        db.run(`ALTER TABLE bibliographic_info ADD COLUMN description TEXT`);
+    } catch {
+        // Column already exists, ignore error
+    }
 
     // Create indexes for efficient searching
     db.run(`
@@ -190,9 +200,9 @@ export function upsertBibliographicInfo(
             db.prepare(`
                 INSERT INTO bibliographic_info (
                     isbn, title, title_kana, authors, authors_kana,
-                    publisher, pub_year, ndc10, ndlc, updated_at
+                    publisher, pub_year, ndc10, ndlc, description, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             `).run(
                 info.isbn,
                 info.title,
@@ -202,16 +212,17 @@ export function upsertBibliographicInfo(
                 info.publisher,
                 info.pub_year,
                 info.ndc10,
-                info.ndlc
+                info.ndlc,
+                info.description || null
             );
         } else {
             // INSERT path: use trigger (works correctly)
             db.prepare(`
                 INSERT INTO bibliographic_info (
                     isbn, title, title_kana, authors, authors_kana,
-                    publisher, pub_year, ndc10, ndlc, updated_at
+                    publisher, pub_year, ndc10, ndlc, description, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             `).run(
                 info.isbn,
                 info.title,
@@ -221,7 +232,8 @@ export function upsertBibliographicInfo(
                 info.publisher,
                 info.pub_year,
                 info.ndc10,
-                info.ndlc
+                info.ndlc,
+                info.description || null
             );
         }
 
@@ -258,6 +270,7 @@ export function getBibliographicInfo(
         pub_year: row.pub_year,
         ndc10: row.ndc10,
         ndlc: row.ndlc,
+        description: row.description,
     };
 }
 
@@ -288,6 +301,7 @@ export function getBibliographicInfoBatch(
         pub_year: row.pub_year,
         ndc10: row.ndc10,
         ndlc: row.ndlc,
+        description: row.description,
     }));
 }
 
@@ -404,6 +418,7 @@ export function searchBibliographic(
         pub_year: row.pub_year,
         ndc10: row.ndc10,
         ndlc: row.ndlc,
+        description: row.description,
     }));
 }
 
