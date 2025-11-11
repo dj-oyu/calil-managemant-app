@@ -78,25 +78,6 @@ function initializeDatabase(db: Database): void {
         )
     `);
 
-    // Migrate existing tables: Add new columns if they don't exist
-    try {
-        // Check if title_kana column exists
-        const tableInfo = db.prepare("PRAGMA table_info(bibliographic_info)").all() as Array<{ name: string }>;
-        const columnNames = tableInfo.map(col => col.name);
-
-        if (!columnNames.includes('title_kana')) {
-            console.log("Migrating database: Adding title_kana column");
-            db.run(`ALTER TABLE bibliographic_info ADD COLUMN title_kana TEXT`);
-        }
-
-        if (!columnNames.includes('authors_kana')) {
-            console.log("Migrating database: Adding authors_kana column");
-            db.run(`ALTER TABLE bibliographic_info ADD COLUMN authors_kana TEXT`);
-        }
-    } catch (error) {
-        console.error("Migration error:", error);
-    }
-
     // Create indexes for efficient searching
     db.run(`
         CREATE INDEX IF NOT EXISTS idx_bibliographic_updated_at
@@ -130,19 +111,6 @@ function initializeDatabase(db: Database): void {
 
     // Create FTS5 virtual table for full-text search
     // Using unicode61 tokenizer with remove_diacritics for better Japanese support
-    // Drop and recreate if schema changed
-    try {
-        // Check if FTS table exists and needs migration
-        const ftsTableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='bibliographic_fts'").get() as { sql: string } | undefined;
-
-        if (ftsTableInfo && (!ftsTableInfo.sql.includes('title_kana') || !ftsTableInfo.sql.includes('authors_kana'))) {
-            console.log("Migrating FTS table: Dropping old version");
-            db.run(`DROP TABLE IF EXISTS bibliographic_fts`);
-        }
-    } catch (error) {
-        console.error("FTS migration check error:", error);
-    }
-
     db.run(`
         CREATE VIRTUAL TABLE IF NOT EXISTS bibliographic_fts USING fts5(
             isbn UNINDEXED,
@@ -178,71 +146,90 @@ function initializeDatabase(db: Database): void {
         END
     `);
 
-    db.run(`
-        CREATE TRIGGER bibliographic_fts_update
-        AFTER UPDATE ON bibliographic_info BEGIN
-            DELETE FROM bibliographic_fts WHERE rowid = old.rowid;
-            INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
-            VALUES (new.rowid, new.isbn, new.title, new.title_kana, new.authors, new.authors_kana, new.publisher);
-        END
-    `);
-
-    // Rebuild FTS index from existing data
-    try {
-        // First, clear the FTS table
-        db.run(`DELETE FROM bibliographic_fts`);
-
-        // Then, repopulate it with existing data
-        db.run(`
-            INSERT INTO bibliographic_fts(rowid, isbn, title, title_kana, authors, authors_kana, publisher)
-            SELECT rowid, isbn, title, title_kana, authors, authors_kana, publisher
-            FROM bibliographic_info
-        `);
-
-        console.log("FTS index rebuilt successfully");
-    } catch (error) {
-        console.error("FTS rebuild error:", error);
-    }
-
-    console.log("Bibliographic database initialized with search support");
+    // NOTE: UPDATE trigger is NOT created because we manually manage FTS5 on updates
+    // to work around bun:sqlite v1.3.2 FTS5 UPDATE trigger bug
 }
 
 /**
  * Insert or update bibliographic information
+ *
+ * This implementation manually manages FTS5 index on UPDATE to work around
+ * bun:sqlite v1.3.2 FTS5 UPDATE trigger bug where DELETE doesn't execute properly.
+ *
+ * For INSERT operations, we rely on the INSERT trigger which works correctly.
+ * For UPDATE operations, we manually delete old FTS5 entry and insert new one.
  */
 export function upsertBibliographicInfo(
     db: Database,
     info: BibliographicInfo
 ): void {
-    const stmt = db.prepare(`
-        INSERT INTO bibliographic_info (
-            isbn, title, title_kana, authors, authors_kana,
-            publisher, pub_year, ndc10, ndlc, updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(isbn) DO UPDATE SET
-            title = excluded.title,
-            title_kana = excluded.title_kana,
-            authors = excluded.authors,
-            authors_kana = excluded.authors_kana,
-            publisher = excluded.publisher,
-            pub_year = excluded.pub_year,
-            ndc10 = excluded.ndc10,
-            ndlc = excluded.ndlc,
-            updated_at = CURRENT_TIMESTAMP
-    `);
+    // Transaction ensures atomicity across all operations
+    db.run("BEGIN TRANSACTION");
 
-    stmt.run(
-        info.isbn,
-        info.title,
-        info.title_kana || null,
-        JSON.stringify(info.authors),
-        info.authors_kana ? JSON.stringify(info.authors_kana) : null,
-        info.publisher,
-        info.pub_year,
-        info.ndc10,
-        info.ndlc
-    );
+    try {
+        // Check if record already exists
+        const existingRow = db
+            .prepare("SELECT rowid FROM bibliographic_info WHERE isbn = ?")
+            .get(info.isbn) as { rowid: number } | undefined;
+
+        if (existingRow) {
+            // UPDATE path: use DELETE+INSERT instead of UPDATE to avoid FTS5 issues
+            // This approach completely avoids UPDATE triggers and FTS5 sync problems
+
+            // 1. Delete from FTS5 first
+            db.prepare("DELETE FROM bibliographic_fts WHERE rowid = ?").run(
+                existingRow.rowid
+            );
+
+            // 2. Delete from main table
+            db.prepare("DELETE FROM bibliographic_info WHERE isbn = ?").run(
+                info.isbn
+            );
+
+            // 3. Insert new record (INSERT trigger will handle FTS5)
+            db.prepare(`
+                INSERT INTO bibliographic_info (
+                    isbn, title, title_kana, authors, authors_kana,
+                    publisher, pub_year, ndc10, ndlc, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            `).run(
+                info.isbn,
+                info.title,
+                info.title_kana || null,
+                JSON.stringify(info.authors),
+                info.authors_kana ? JSON.stringify(info.authors_kana) : null,
+                info.publisher,
+                info.pub_year,
+                info.ndc10,
+                info.ndlc
+            );
+        } else {
+            // INSERT path: use trigger (works correctly)
+            db.prepare(`
+                INSERT INTO bibliographic_info (
+                    isbn, title, title_kana, authors, authors_kana,
+                    publisher, pub_year, ndc10, ndlc, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            `).run(
+                info.isbn,
+                info.title,
+                info.title_kana || null,
+                JSON.stringify(info.authors),
+                info.authors_kana ? JSON.stringify(info.authors_kana) : null,
+                info.publisher,
+                info.pub_year,
+                info.ndc10,
+                info.ndlc
+            );
+        }
+
+        db.run("COMMIT");
+    } catch (error) {
+        db.run("ROLLBACK");
+        throw error;
+    }
 }
 
 /**

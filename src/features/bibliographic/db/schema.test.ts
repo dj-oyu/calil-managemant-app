@@ -140,29 +140,7 @@ describe("BibliographicInfo Database", () => {
             expect(result?.publisher).toBe("岩波書店");
         });
 
-        // NOTE: Update test with FTS5 triggers causes "database disk image is malformed" in bun:sqlite v1.3.2
-        // Testing update logic directly without triggers as a workaround
-        test("should update existing bibliographic info (manual test without triggers)", () => {
-            // Create a separate test DB without FTS5 triggers for this specific test
-            const testDb = createTestDatabase();
-
-            // Create table without FTS and triggers
-            testDb.run(`
-                CREATE TABLE bibliographic_info (
-                    isbn TEXT PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    title_kana TEXT,
-                    authors TEXT NOT NULL,
-                    authors_kana TEXT,
-                    publisher TEXT,
-                    pub_year TEXT,
-                    ndc10 TEXT,
-                    ndlc TEXT,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-            `);
-
+        test("should update existing bibliographic info", () => {
             const info: BibliographicInfo = {
                 isbn: "9784003101018",
                 title: "吾輩は猫である",
@@ -173,7 +151,7 @@ describe("BibliographicInfo Database", () => {
                 ndlc: "KH334",
             };
 
-            upsertBibliographicInfo(testDb, info);
+            upsertBibliographicInfo(db, info);
 
             // Update with new data
             const updatedInfo: BibliographicInfo = {
@@ -182,13 +160,11 @@ describe("BibliographicInfo Database", () => {
                 authors_kana: ["ナツメソウセキ"],
             };
 
-            upsertBibliographicInfo(testDb, updatedInfo);
+            upsertBibliographicInfo(db, updatedInfo);
 
-            const result = getBibliographicInfo(testDb, "9784003101018");
+            const result = getBibliographicInfo(db, "9784003101018");
             expect(result?.title_kana).toBe("ワガハイハネコデアル");
             expect(result?.authors_kana).toEqual(["ナツメソウセキ"]);
-
-            cleanupTestDatabase(testDb);
         });
 
         test("should handle null values", () => {
@@ -403,11 +379,9 @@ describe("BibliographicInfo Database", () => {
             expect(result).toHaveLength(2);
         });
 
-        // KNOWN ISSUE: bun:sqlite v1.3.2 has a bug with FTS5 UPDATE triggers
-        // The DELETE portion of the trigger doesn't execute properly, leaving old index entries
-        // This test documents the expected behavior, but is skipped due to the bug
-        // In production environment, this functionality works correctly (verified by user)
-        test.skip("should find updated data with FTS5 after update (integration test)", () => {
+        // FTS5 update integration test
+        // With manual FTS5 management in upsert, this now works correctly
+        test("should find updated data with FTS5 after update (integration test)", () => {
             // Insert initial data
             const initialInfo: BibliographicInfo = {
                 isbn: "9784567890123",
@@ -629,6 +603,359 @@ describe("BibliographicInfo Database", () => {
             expect(result).toContain("岩波書店");
             expect(result).toContain("新潮社");
             expect(result).toContain("角川書店");
+        });
+    });
+
+    describe("Transaction and Error Handling", () => {
+        test("should rollback on error during update", () => {
+            const info: BibliographicInfo = {
+                isbn: "9784003101018",
+                title: "吾輩は猫である",
+                authors: ["夏目漱石"],
+                publisher: "岩波書店",
+                pub_year: "2022",
+                ndc10: "913.6",
+                ndlc: "KH334",
+            };
+
+            upsertBibliographicInfo(db, info);
+
+            // Temporarily corrupt the database by dropping FTS table
+            db.run("DROP TABLE bibliographic_fts");
+
+            // Attempt to update should fail and rollback
+            const updatedInfo: BibliographicInfo = {
+                ...info,
+                title: "新しいタイトル",
+            };
+
+            expect(() => upsertBibliographicInfo(db, updatedInfo)).toThrow();
+
+            // Recreate FTS table for cleanup
+            db.run(`
+                CREATE VIRTUAL TABLE bibliographic_fts USING fts5(
+                    isbn UNINDEXED,
+                    title,
+                    title_kana,
+                    authors,
+                    authors_kana,
+                    publisher,
+                    content='bibliographic_info',
+                    content_rowid='rowid',
+                    tokenize='unicode61 remove_diacritics 2'
+                )
+            `);
+
+            // Original data should still be intact (rollback worked)
+            const result = getBibliographicInfo(db, "9784003101018");
+            expect(result?.title).toBe("吾輩は猫である");
+        });
+
+        test("should handle constraint violations", () => {
+            const info: BibliographicInfo = {
+                isbn: "9784003101018",
+                title: "吾輩は猫である",
+                authors: ["夏目漱石"],
+                publisher: "岩波書店",
+                pub_year: "2022",
+                ndc10: "913.6",
+                ndlc: "KH334",
+            };
+
+            upsertBibliographicInfo(db, info);
+
+            // Upsert with same ISBN should succeed (update)
+            const updatedInfo: BibliographicInfo = {
+                ...info,
+                title: "吾輩は猫である 改訂版",
+            };
+
+            expect(() => upsertBibliographicInfo(db, updatedInfo)).not.toThrow();
+
+            const result = getBibliographicInfo(db, "9784003101018");
+            expect(result?.title).toBe("吾輩は猫である 改訂版");
+        });
+    });
+
+    describe("Edge Cases", () => {
+        test("should handle empty string values", () => {
+            const info: BibliographicInfo = {
+                isbn: "9784003101018",
+                title: "吾輩は猫である",
+                authors: [""],
+                publisher: "",
+                pub_year: "",
+                ndc10: "",
+                ndlc: "",
+            };
+
+            upsertBibliographicInfo(db, info);
+
+            const result = getBibliographicInfo(db, "9784003101018");
+            expect(result?.publisher).toBe("");
+            expect(result?.authors).toEqual([""]);
+        });
+
+        test("should handle special characters in text", () => {
+            const info: BibliographicInfo = {
+                isbn: "9784003101018",
+                title: "Title with \"quotes\" and 'apostrophes' & <tags>",
+                authors: ["Author's Name", "名前（なまえ）"],
+                publisher: "Publisher & Co.",
+                pub_year: "2022",
+                ndc10: "913.6",
+                ndlc: "KH334",
+            };
+
+            upsertBibliographicInfo(db, info);
+
+            const result = getBibliographicInfo(db, "9784003101018");
+            expect(result?.title).toBe("Title with \"quotes\" and 'apostrophes' & <tags>");
+            expect(result?.authors).toContain("名前（なまえ）");
+        });
+
+        test("should handle very long strings", () => {
+            const longTitle = "あ".repeat(1000);
+            const longAuthor = "い".repeat(500);
+
+            const info: BibliographicInfo = {
+                isbn: "9784003101018",
+                title: longTitle,
+                authors: [longAuthor],
+                publisher: "出版社",
+                pub_year: "2022",
+                ndc10: "913.6",
+                ndlc: "KH334",
+            };
+
+            upsertBibliographicInfo(db, info);
+
+            const result = getBibliographicInfo(db, "9784003101018");
+            expect(result?.title.length).toBe(1000);
+            expect(result?.authors[0].length).toBe(500);
+        });
+
+        test("should handle multiple authors array", () => {
+            const info: BibliographicInfo = {
+                isbn: "9784003101018",
+                title: "共著の本",
+                authors: ["著者1", "著者2", "著者3", "著者4", "著者5"],
+                authors_kana: ["チョシャ1", "チョシャ2", "チョシャ3", "チョシャ4", "チョシャ5"],
+                publisher: "出版社",
+                pub_year: "2022",
+                ndc10: "913.6",
+                ndlc: "KH334",
+            };
+
+            upsertBibliographicInfo(db, info);
+
+            const result = getBibliographicInfo(db, "9784003101018");
+            expect(result?.authors).toHaveLength(5);
+            expect(result?.authors_kana).toHaveLength(5);
+        });
+
+        test("should handle Unicode characters (emoji, rare kanji)", () => {
+            const info: BibliographicInfo = {
+                isbn: "9784003101018",
+                title: "📚本のタイトル🎌",
+                authors: ["𠮷田太郎", "髙橋花子"],
+                publisher: "🏢出版社",
+                pub_year: "2022",
+                ndc10: "913.6",
+                ndlc: "KH334",
+            };
+
+            upsertBibliographicInfo(db, info);
+
+            const result = getBibliographicInfo(db, "9784003101018");
+            expect(result?.title).toBe("📚本のタイトル🎌");
+            expect(result?.authors).toContain("𠮷田太郎");
+        });
+    });
+
+    describe("FTS5 Advanced Search", () => {
+        beforeEach(() => {
+            const books: BibliographicInfo[] = [
+                {
+                    isbn: "9784003101018",
+                    title: "吾輩は猫である",
+                    title_kana: "ワガハイハネコデアル",
+                    authors: ["夏目漱石"],
+                    authors_kana: ["ナツメソウセキ"],
+                    publisher: "岩波書店",
+                    pub_year: "2022",
+                    ndc10: "913.6",
+                    ndlc: "KH334",
+                },
+                {
+                    isbn: "9784101010014",
+                    title: "こころ",
+                    title_kana: "ココロ",
+                    authors: ["夏目漱石"],
+                    authors_kana: ["ナツメソウセキ"],
+                    publisher: "新潮社",
+                    pub_year: "2021",
+                    ndc10: "913.6",
+                    ndlc: "KH334",
+                },
+                {
+                    isbn: "9784041003084",
+                    title: "羅生門・鼻",
+                    title_kana: "ラショウモン・ハナ",
+                    authors: ["芥川龍之介"],
+                    authors_kana: ["アクタガワリュウノスケ"],
+                    publisher: "角川書店",
+                    pub_year: "2020",
+                    ndc10: "913.6",
+                    ndlc: "KH334",
+                },
+            ];
+
+            books.forEach((book) => upsertBibliographicInfo(db, book));
+        });
+
+        test("should search with single keyword", () => {
+            const result = searchBibliographic(db, { query: "夏目漱石" });
+            expect(result).toHaveLength(2);
+        });
+
+        test("should search with title keyword", () => {
+            const result = searchBibliographic(db, { query: "羅生門" });
+            expect(result.length).toBeGreaterThanOrEqual(1);
+        });
+
+        test("should handle empty search query", () => {
+            const result = searchBibliographic(db, { query: "" });
+            // Empty query should return all results or none (implementation dependent)
+            expect(Array.isArray(result)).toBe(true);
+        });
+
+        test("should handle search with no results", () => {
+            const result = searchBibliographic(db, { query: "存在しない著者名" });
+            expect(result).toHaveLength(0);
+        });
+    });
+
+    describe("Batch Operations Performance", () => {
+        test("should handle batch insert efficiently", () => {
+            const books: BibliographicInfo[] = [];
+            for (let i = 0; i < 100; i++) {
+                books.push({
+                    isbn: `978400000${i.toString().padStart(4, "0")}`,
+                    title: `テスト本${i}`,
+                    authors: [`著者${i}`],
+                    publisher: "テスト出版社",
+                    pub_year: "2022",
+                    ndc10: "913.6",
+                    ndlc: "KH334",
+                });
+            }
+
+            const startTime = Date.now();
+            books.forEach((book) => upsertBibliographicInfo(db, book));
+            const duration = Date.now() - startTime;
+
+            // Should complete in reasonable time (< 5 seconds for 100 records)
+            expect(duration).toBeLessThan(5000);
+
+            // Verify all inserted
+            const result = getBibliographicInfoBatch(
+                db,
+                books.map((b) => b.isbn)
+            );
+            expect(result).toHaveLength(100);
+        });
+
+        test("should handle batch update efficiently", () => {
+            // First insert
+            const books: BibliographicInfo[] = [];
+            for (let i = 0; i < 50; i++) {
+                books.push({
+                    isbn: `978400000${i.toString().padStart(4, "0")}`,
+                    title: `テスト本${i}`,
+                    authors: [`著者${i}`],
+                    publisher: "テスト出版社",
+                    pub_year: "2022",
+                    ndc10: "913.6",
+                    ndlc: "KH334",
+                });
+            }
+            books.forEach((book) => upsertBibliographicInfo(db, book));
+
+            // Then update all
+            const startTime = Date.now();
+            books.forEach((book) => {
+                upsertBibliographicInfo(db, {
+                    ...book,
+                    title: `更新${book.title}`,
+                });
+            });
+            const duration = Date.now() - startTime;
+
+            // Should complete in reasonable time (< 10 seconds for 50 updates)
+            expect(duration).toBeLessThan(10000);
+
+            // Verify all updated
+            const result = getBibliographicInfo(db, books[0].isbn);
+            expect(result?.title).toContain("更新");
+        });
+    });
+
+    describe("Data Integrity", () => {
+        test("should maintain FTS5 and main table consistency", () => {
+            const info: BibliographicInfo = {
+                isbn: "9784003101018",
+                title: "吾輩は猫である",
+                authors: ["夏目漱石"],
+                publisher: "岩波書店",
+                pub_year: "2022",
+                ndc10: "913.6",
+                ndlc: "KH334",
+            };
+
+            upsertBibliographicInfo(db, info);
+
+            // Check main table
+            const mainResult = getBibliographicInfo(db, "9784003101018");
+            expect(mainResult).not.toBeNull();
+
+            // Check FTS5 can find it
+            const ftsResult = searchBibliographic(db, { query: "夏目漱石" });
+            expect(ftsResult).toHaveLength(1);
+            expect(ftsResult[0].isbn).toBe("9784003101018");
+        });
+
+        test("should maintain consistency after update", () => {
+            const info: BibliographicInfo = {
+                isbn: "9784003101018",
+                title: "初期タイトル",
+                authors: ["初期著者"],
+                publisher: "初期出版社",
+                pub_year: "2020",
+                ndc10: "913.6",
+                ndlc: "KH334",
+            };
+
+            upsertBibliographicInfo(db, info);
+
+            // Verify initial insert
+            const initialResult = searchBibliographic(db, { query: "初期著者" });
+            expect(initialResult).toHaveLength(1);
+
+            // Update once
+            upsertBibliographicInfo(db, {
+                ...info,
+                title: "更新後タイトル",
+                authors: ["更新後著者"],
+            });
+
+            // Should only find updated version
+            const updatedResult = searchBibliographic(db, { query: "更新後著者" });
+            expect(updatedResult).toHaveLength(1);
+
+            // Old version should not be found
+            const oldResult = searchBibliographic(db, { query: "初期著者" });
+            expect(oldResult).toHaveLength(0);
         });
     });
 });
