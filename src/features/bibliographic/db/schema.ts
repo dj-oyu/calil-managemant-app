@@ -110,10 +110,10 @@ function shouldResetDatabase(dbPath: string): [boolean, number | null] {
         if (tempDb) {
             try {
                 tempDb.close();
-                // Add small delay to ensure Windows releases file handle
-                // This is critical on Windows where file handles may not be
-                // released immediately after close()
-                Bun.sleepSync(50);
+                // Add delay to ensure Windows releases file handle
+                // Windows can take a significant amount of time to release file handles
+                // especially for SQLite databases with WAL mode or journal files
+                Bun.sleepSync(200);
             } catch (closeError) {
                 logger.warn("Error closing temporary database", {
                     error: String(closeError),
@@ -137,8 +137,9 @@ function resetDatabase(dbPath: string): void {
     const backupPath = `${dbPath}.${timestamp}.old`;
 
     // Retry logic for Windows file locking issues
-    const maxRetries = 5;
-    const retryDelays = [100, 200, 500, 1000, 2000]; // Progressive delays in ms
+    // Windows can be very slow to release database file handles
+    const maxRetries = 10;
+    const retryDelays = [200, 300, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000]; // Progressive delays in ms
 
     let lastError: Error | null = null;
 
