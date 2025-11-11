@@ -106,10 +106,14 @@ function shouldResetDatabase(dbPath: string): [boolean, number | null] {
         });
         return [true, null];
     } finally {
-        // Ensure database is closed before attempting deletion
+        // Ensure database is closed before attempting rename
         if (tempDb) {
             try {
                 tempDb.close();
+                // Add small delay to ensure Windows releases file handle
+                // This is critical on Windows where file handles may not be
+                // released immediately after close()
+                Bun.sleepSync(50);
             } catch (closeError) {
                 logger.warn("Error closing temporary database", {
                     error: String(closeError),
@@ -122,59 +126,102 @@ function shouldResetDatabase(dbPath: string): [boolean, number | null] {
 /**
  * Reset database by renaming the old file and creating a new one
  * This avoids file locking issues on Windows
+ * Implements retry logic for Windows file locking
  */
 function resetDatabase(dbPath: string): void {
     if (!existsSync(dbPath)) {
         return; // File doesn't exist, nothing to reset
     }
 
-    try {
-        // Generate backup filename with timestamp
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const backupPath = `${dbPath}.${timestamp}.old`;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupPath = `${dbPath}.${timestamp}.old`;
 
-        // Rename instead of delete to avoid locking issues
-        renameSync(dbPath, backupPath);
-        logger.info("Database file renamed for reset", {
-            oldPath: dbPath,
-            newPath: backupPath,
-        });
+    // Retry logic for Windows file locking issues
+    const maxRetries = 5;
+    const retryDelays = [100, 200, 500, 1000, 2000]; // Progressive delays in ms
 
-        // Optionally, try to delete old backup files (best effort)
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
-            const dir = path.dirname(dbPath);
-            const basename = path.basename(dbPath);
-            const oldBackups = readdirSync(dir)
-                .filter((f: string) => f.startsWith(basename) && f.endsWith(".old"))
-                .map((f: string) => path.join(dir, f));
-
-            // Keep only the most recent 3 backups
-            if (oldBackups.length > 3) {
-                oldBackups
-                    .sort()
-                    .slice(0, -3)
-                    .forEach((f: string) => {
-                        try {
-                            unlinkSync(f);
-                            logger.debug("Deleted old backup", { path: f });
-                        } catch {
-                            // Ignore errors when deleting old backups
-                        }
-                    });
+            if (attempt > 0) {
+                logger.debug(`Retry attempt ${attempt + 1}/${maxRetries} for database reset`, {
+                    delay: retryDelays[attempt - 1],
+                });
+                // Use Bun.sleepSync for synchronous sleep
+                Bun.sleepSync(retryDelays[attempt - 1]!);
             }
-        } catch {
-            // Ignore errors when cleaning up old backups
+
+            // Rename instead of delete to avoid locking issues
+            renameSync(dbPath, backupPath);
+            logger.info("Database file renamed for reset", {
+                oldPath: dbPath,
+                newPath: backupPath,
+                attempts: attempt + 1,
+            });
+
+            // Success! Clean up old backups
+            try {
+                const dir = path.dirname(dbPath);
+                const basename = path.basename(dbPath);
+                const oldBackups = readdirSync(dir)
+                    .filter((f: string) => f.startsWith(basename) && f.endsWith(".old"))
+                    .map((f: string) => path.join(dir, f));
+
+                // Keep only the most recent 3 backups
+                if (oldBackups.length > 3) {
+                    oldBackups
+                        .sort()
+                        .slice(0, -3)
+                        .forEach((f: string) => {
+                            try {
+                                unlinkSync(f);
+                                logger.debug("Deleted old backup", { path: f });
+                            } catch {
+                                // Ignore errors when deleting old backups
+                            }
+                        });
+                }
+            } catch {
+                // Ignore errors when cleaning up old backups
+            }
+
+            return; // Success!
+        } catch (error: any) {
+            lastError = error;
+            const errorMsg = String(error);
+
+            // If it's a file locking error (EBUSY), retry
+            if (errorMsg.includes("EBUSY") || errorMsg.includes("resource busy")) {
+                logger.warn(`Database file is locked, will retry`, {
+                    attempt: attempt + 1,
+                    maxRetries,
+                    error: errorMsg,
+                });
+                continue;
+            }
+
+            // For other errors, fail immediately
+            logger.error("Failed to reset database file (non-locking error)", {
+                path: dbPath,
+                error: errorMsg,
+            });
+            throw new Error(
+                `Cannot reset database file: ${error.message}. Path: ${dbPath}`
+            );
         }
-    } catch (error: any) {
-        logger.error("Failed to reset database file", {
-            path: dbPath,
-            error: String(error),
-        });
-        throw new Error(
-            `Cannot reset database file: ${error.message}. ` +
-            `Path: ${dbPath}`
-        );
     }
+
+    // All retries failed
+    logger.error("Failed to reset database file after all retries", {
+        path: dbPath,
+        attempts: maxRetries,
+        error: String(lastError),
+    });
+    throw new Error(
+        `Cannot reset database file after ${maxRetries} attempts: ${lastError?.message}. ` +
+        `Path: ${dbPath}. Please close all applications using this database.`
+    );
 }
 
 /**
