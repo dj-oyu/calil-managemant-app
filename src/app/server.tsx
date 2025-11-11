@@ -794,12 +794,13 @@ app.get("/api/book-list-page/:listType/:page", async (c) => {
 app.get("/api/books/:isbn", async (c) => {
     const isbn = c.req.param("isbn");
 
-    logger.info("NDL Search started", { isbn });
+    logger.info("API: 書誌詳細取得リクエスト", { isbn });
 
-    const detail = await NDLsearch(isbn);
+    // Search with DB cache support
+    const detail = await NDLsearch(isbn, db, getBibliographicInfo, upsertBibliographicInfo);
 
     if (!detail || detail[0] == null) {
-        logger.warn("No NDL results found", { isbn });
+        logger.warn("API: 書誌情報が見つかりません", { isbn });
         return c.html(<div>詳細情報が見つかりませんでした。</div>);
     }
 
@@ -814,31 +815,7 @@ app.get("/api/books/:isbn", async (c) => {
         ndc10: item.ndc10 || null,
         hasDescription: !!item.descriptionHtml,
     };
-    logger.info("Book details retrieved", summary);
-
-    // Save to database for future JSON export
-    if (item.isbn13 && item.title) {
-        try {
-            const bibInfo: BibliographicInfo = {
-                isbn: item.isbn13,
-                title: item.title,
-                title_kana: item.titleKana,
-                authors: item.creators,
-                authors_kana: item.creatorsKana,
-                publisher: item.publisher,
-                pub_year: item.pubYear,
-                ndc10: item.ndc10,
-                ndlc: item.ndlc,
-            };
-            upsertBibliographicInfo(db, bibInfo);
-            logger.info("Bibliographic info saved to database", { isbn: item.isbn13 });
-        } catch (error) {
-            logger.error("Failed to save bibliographic info", {
-                isbn: item.isbn13,
-                error: String(error),
-            });
-        }
-    }
+    logger.info("API: 書誌詳細取得完了", summary);
 
     return c.html(renderBookDetail(item));
 });
@@ -905,7 +882,8 @@ app.get("/api/download/bibliographic/:listType", async (c) => {
 
             for (const isbn of missingIsbns) {
                 try {
-                    const detail = await NDLsearch(isbn);
+                    // NDLsearch now handles caching internally
+                    const detail = await NDLsearch(isbn, db, getBibliographicInfo, upsertBibliographicInfo);
                     if (detail && detail[0]) {
                         const item = detail[0];
                         if (item.isbn13 && item.title) {
@@ -920,9 +898,8 @@ app.get("/api/download/bibliographic/:listType", async (c) => {
                                 ndc10: item.ndc10,
                                 ndlc: item.ndlc,
                             };
-                            upsertBibliographicInfo(db, bibInfo);
                             newlyFetchedInfo.push(bibInfo);
-                            logger.debug("API: NDL書誌情報取得・保存完了", {
+                            logger.debug("API: NDL書誌情報取得完了", {
                                 isbn,
                                 title: item.title,
                             });

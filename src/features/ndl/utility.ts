@@ -1,6 +1,9 @@
+import type { Database } from "bun:sqlite";
+import type { BibliographicInfo } from "../bibliographic/db/schema";
+
 export const convertISBN10to13 = (isbn10: string): string => {
     if (isbn10.length !== 10) return isbn10;
-    
+
     const core = `978${isbn10.slice(0, 9)}`;
     let sum = 0;
 
@@ -12,13 +15,91 @@ export const convertISBN10to13 = (isbn10: string): string => {
     return `${core}${checkDigit}`;
 };
 
-export const NDLsearch = async (isbn: string ): Promise<NdlItem[] | null> => {
-  const response = await fetch(`https://ndlsearch.ndl.go.jp/api/opensearch?isbn=${isbn}`);
-  const xmlText = await response.text();
+/**
+ * Convert BibliographicInfo from DB to NdlItem format
+ */
+function bibliographicInfoToNdlItem(info: BibliographicInfo): NdlItem {
+    return {
+        title: info.title,
+        titleKana: info.title_kana,
+        link: null,
+        creators: info.authors,
+        creatorsKana: info.authors_kana || [],
+        publisher: info.publisher,
+        pubYear: info.pub_year,
+        issued: null,
+        extent: null,
+        price: null,
+        categories: [],
+        isbn13: info.isbn,
+        ndlBibId: null,
+        jpno: null,
+        tohanMarcNo: null,
+        ndc10: info.ndc10,
+        ndlc: info.ndlc,
+        subjects: [],
+        descriptionHtml: null,
+        seeAlso: [],
+    };
+}
 
-  const result = parseNdlOpenSearch(xmlText);
+/**
+ * Search NDL with optional DB cache support
+ *
+ * @param isbn - ISBN to search for
+ * @param db - Optional database instance for caching
+ * @param getBibliographicInfo - Optional function to retrieve cached data
+ * @param upsertBibliographicInfo - Optional function to save fetched data
+ * @returns Array of NdlItem or null if not found
+ */
+export const NDLsearch = async (
+    isbn: string,
+    db?: Database,
+    getBibliographicInfo?: (db: Database, isbn: string) => BibliographicInfo | null,
+    upsertBibliographicInfo?: (db: Database, info: BibliographicInfo) => void
+): Promise<NdlItem[] | null> => {
+    // Try cache first if DB functions are provided
+    if (db && getBibliographicInfo) {
+        const cached = getBibliographicInfo(db, isbn);
+        if (cached) {
+            console.log(`[NDLsearch] DBキャッシュヒット: ${isbn}`);
+            return [bibliographicInfoToNdlItem(cached)];
+        }
+    }
 
-  return result.items || null;
+    // Fetch from NDL API
+    console.log(`[NDLsearch] NDL API呼び出し: ${isbn}`);
+    const response = await fetch(`https://ndlsearch.ndl.go.jp/api/opensearch?isbn=${isbn}`);
+    const xmlText = await response.text();
+
+    const result = parseNdlOpenSearch(xmlText);
+
+    // Save to cache if DB functions are provided and data is valid
+    if (db && upsertBibliographicInfo && result.items && result.items[0]) {
+        const item = result.items[0];
+        if (item.isbn13 && item.title) {
+            const bibInfo: BibliographicInfo = {
+                isbn: item.isbn13,
+                title: item.title,
+                title_kana: item.titleKana,
+                authors: item.creators,
+                authors_kana: item.creatorsKana,
+                publisher: item.publisher,
+                pub_year: item.pubYear,
+                ndc10: item.ndc10,
+                ndlc: item.ndlc,
+            };
+            try {
+                upsertBibliographicInfo(db, bibInfo);
+                console.log(`[NDLsearch] DBキャッシュ保存完了: ${isbn}`);
+            } catch (error) {
+                // Ignore cache save errors
+                console.error(`[NDLsearch] DBキャッシュ保存失敗: ${isbn}`, error);
+            }
+        }
+    }
+
+    return result.items || null;
 }
 
 // parse-ndl-opensearch.ts
