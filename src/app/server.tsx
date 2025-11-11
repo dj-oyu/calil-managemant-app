@@ -852,12 +852,12 @@ app.get("/api/download/bibliographic/:listType", async (c) => {
         return c.json({ error: "Invalid list type" }, 400);
     }
 
-    logger.info("API: Bibliographic download request", { listType });
+    logger.info("API: 書誌情報JSONダウンロードリクエスト", { listType });
 
     try {
         // Fetch all books from the list
         const books = await fetchBookList(listType);
-        logger.info("API: Fetched books for download", {
+        logger.info("API: 蔵書リスト取得完了", {
             listType,
             count: books.length,
         });
@@ -867,18 +867,28 @@ app.get("/api/download/bibliographic/:listType", async (c) => {
             .map((book) => convertISBN10to13(book.isbn))
             .filter((isbn) => isbn && isbn.length === 13);
 
-        logger.info("API: Converted ISBNs", {
+        logger.info("API: ISBN変換完了", {
             listType,
             validIsbnCount: isbn13List.length,
+            invalidCount: books.length - isbn13List.length,
         });
 
         // Get existing bibliographic info from database
         const existingInfo = getBibliographicInfoBatch(db, isbn13List);
         const existingIsbnSet = new Set(existingInfo.map((info) => info.isbn));
 
-        logger.info("API: Found existing bibliographic info", {
+        const cacheHitCount = existingInfo.length;
+        const cacheMissCount = isbn13List.length - existingInfo.length;
+        const cacheHitRate = isbn13List.length > 0
+            ? ((cacheHitCount / isbn13List.length) * 100).toFixed(1)
+            : "0.0";
+
+        logger.info("API: 書誌情報DBキャッシュ確認完了", {
             listType,
-            existingCount: existingInfo.length,
+            total: isbn13List.length,
+            cacheHit: cacheHitCount,
+            cacheMiss: cacheMissCount,
+            hitRate: `${cacheHitRate}%`,
         });
 
         // Fetch missing bibliographic info from NDL
@@ -888,9 +898,9 @@ app.get("/api/download/bibliographic/:listType", async (c) => {
         const newlyFetchedInfo: BibliographicInfo[] = [];
 
         if (missingIsbns.length > 0) {
-            logger.info("API: Fetching missing bibliographic info from NDL", {
+            logger.info("API: NDLから不足している書誌情報を取得開始", {
                 listType,
-                missingCount: missingIsbns.length,
+                fetchCount: missingIsbns.length,
             });
 
             for (const isbn of missingIsbns) {
@@ -912,26 +922,35 @@ app.get("/api/download/bibliographic/:listType", async (c) => {
                             };
                             upsertBibliographicInfo(db, bibInfo);
                             newlyFetchedInfo.push(bibInfo);
-                            logger.info("API: Fetched and saved NDL data", {
+                            logger.debug("API: NDL書誌情報取得・保存完了", {
                                 isbn,
+                                title: item.title,
                             });
                         }
                     }
                 } catch (error) {
-                    logger.error("API: Failed to fetch NDL data", {
+                    logger.error("API: NDL書誌情報取得失敗", {
                         isbn,
                         error: String(error),
                     });
                 }
             }
+
+            logger.info("API: NDL書誌情報取得処理完了", {
+                listType,
+                fetchedCount: newlyFetchedInfo.length,
+                failedCount: missingIsbns.length - newlyFetchedInfo.length,
+            });
         }
 
         // Combine all bibliographic info
         const allBibInfo = [...existingInfo, ...newlyFetchedInfo];
 
-        logger.info("API: Prepared bibliographic data for download", {
+        logger.info("API: 書誌情報JSONダウンロード準備完了", {
             listType,
             totalRecords: allBibInfo.length,
+            fromCache: existingInfo.length,
+            fromNDL: newlyFetchedInfo.length,
         });
 
         // Format for JSON response
@@ -967,7 +986,7 @@ app.get("/api/download/bibliographic/:listType", async (c) => {
             },
         });
     } catch (error) {
-        logger.error("API: Failed to generate bibliographic download", {
+        logger.error("API: 書誌情報JSONダウンロード生成失敗", {
             listType,
             error: String(error),
         });
