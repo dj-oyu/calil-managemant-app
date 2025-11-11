@@ -52,7 +52,7 @@ export type BibliographicInfo = {
 };
 
 export type SearchOptions = {
-    query?: string; // Free text search across title, authors, publisher
+    query?: string; // Free text search across title, creators, publisher
     title?: string;
     author?: string;
     publisher?: string;
@@ -608,7 +608,7 @@ export function searchBibliographic(
             params.push(`%${title}%`, `%${title}%`);
         }
         if (author) {
-            sql += " AND (authors LIKE ? OR authors_kana LIKE ?)";
+            sql += " AND (creators LIKE ? OR creators_kana LIKE ?)";
             params.push(`%${author}%`, `%${author}%`);
         }
         if (publisher) {
@@ -720,7 +720,7 @@ export function countSearchResults(
             params.push(`%${title}%`, `%${title}%`);
         }
         if (author) {
-            sql += " AND (authors LIKE ? OR authors_kana LIKE ?)";
+            sql += " AND (creators LIKE ? OR creators_kana LIKE ?)";
             params.push(`%${author}%`, `%${author}%`);
         }
         if (publisher) {
