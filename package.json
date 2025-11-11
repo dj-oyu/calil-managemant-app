@@ -13,9 +13,7 @@
         "build": "bun run build:binary",
         "build:binary": "bun scripts/build-binaries.ts",
         "test": "bun test",
-        "test:watch": "bun test --watch",
-        "migrate:descriptions": "bun scripts/migrate-descriptions.ts",
-        "migrate:descriptions:dry-run": "bun scripts/migrate-descriptions.ts --dry-run"
+        "test:watch": "bun test --watch"
     },
     "devDependencies": {
         "@hono/cli": "^0.1.0",

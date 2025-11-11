@@ -1,6 +1,6 @@
-# Database Migration Guide
+# Database Schema Management
 
-このドキュメントでは、データベースのマイグレーションシステムと、既存データの更新方法について説明します。
+このドキュメントでは、データベースのスキーマ管理について説明します。
 
 ## 自動スキーマ管理
 
@@ -11,195 +11,107 @@
 - **自動リセット**: スキーマが古い場合、アプリケーション起動時に自動的にデータベースをリセット
 - **透過的な処理**: ユーザーが意識することなく、常に最新のスキーマで動作
 - **データ再取得**: リセット後、必要なデータはNDL APIから自動的に再取得される
+- **バックアップ保持**: 古いデータベースは `.old` 拡張子付きで自動バックアップ
 
-### 動作
+### 動作フロー
 
 1. アプリケーション起動時、データベースのスキーマバージョンをチェック
-2. 現在のバージョンが期待するバージョンより古い場合、データベースファイルを削除
+2. 現在のバージョンが期待するバージョンより古い場合、古いファイルをバックアップにリネーム
 3. 新しいデータベースを最新のスキーマで作成
-4. 書誌データは使用時にNDL APIから取得され、自動的にキャッシュされる
+4. マイグレーションを自動適用
+5. 書誌データは使用時にNDL APIから取得され、自動的にキャッシュされる
 
-**利点:**
-- スキーマ変更時の手動操作が不要
-- 常に正しいスキーマ構造を保証
-- マイグレーションの失敗によるデータ破損のリスクがない
+### ログ出力例
 
-**注意点:**
-- スキーマ更新時、キャッシュされた書誌データは失われる
-- データは次回使用時に自動的に再取得される
-- カバー画像キャッシュは影響を受けない（別ディレクトリに保存）
-
-## マイグレーションシステム（上級者向け）
-
-### 概要
-
-データを保持したままスキーマを更新したい場合、マイグレーションシステムを使用できます。
-
-- **手動実行**: 必要に応じてマイグレーションスクリプトを実行
-- **バージョン管理**: `schema_migrations` テーブルで適用済みマイグレーションを追跡
-- **トランザクション**: 各マイグレーションはトランザクション内で実行され、失敗時は自動ロールバック
-
-### マイグレーション定義
-
-マイグレーションは `src/features/bibliographic/db/migrations.ts` で定義されています。
-
-```typescript
-export const migrations: Migration[] = [
-    {
-        version: 1,
-        name: "add_description_column",
-        up: (db: Database) => {
-            // マイグレーション処理
-        },
-    },
-];
+スキーマ更新時：
 ```
-
-### 新しいマイグレーションの追加
-
-新しいスキーマ変更が必要な場合：
-
-1. `src/features/bibliographic/db/migrations.ts` に新しいマイグレーションを追加
-2. バージョン番号を適切にインクリメント
-3. `up` 関数内で必要なSQL文を実行
-
-例：
-
-```typescript
-{
-    version: 2,
-    name: "add_subjects_column",
-    up: (db: Database) => {
-        db.run(`ALTER TABLE bibliographic_info ADD COLUMN subjects TEXT`);
-    },
+[INFO] Database schema is outdated, will reset {
+  currentVersion: 0,
+  expectedVersion: 1
 }
+[INFO] Resetting database due to schema changes
+[INFO] Database file renamed for reset {
+  oldPath: "..\\bibliographic.db",
+  newPath: "..\\bibliographic.db.2025-11-11T09-31-05-412Z.old"
+}
+[INFO] Running 1 pending migration(s)
+[INFO] Applying migration 1: add_description_column
+[INFO] ✓ Migration 1 applied successfully
 ```
 
-## 既存データの更新（オプション）
-
-### 注意
-
-通常、スキーマ更新時はデータベースが自動的にリセットされるため、このセクションの操作は不要です。
-既存のキャッシュデータを保持したままアップデートしたい場合のみ、以下の手順を実行してください。
-
-### description フィールドの移行
-
-既存のキャッシュデータにdescriptionフィールドが空の場合、これらを埋めるためのマイグレーションスクリプトを提供しています。
-
-#### ドライラン（変更を確認）
-
-```bash
-bun run migrate:descriptions:dry-run
+最新スキーマの場合：
+```
+[INFO] Bibliographic database initialized
 ```
 
-または
+### メリット
 
-```bash
-bun scripts/migrate-descriptions.ts --dry-run
-```
+✅ **手動操作不要**: スキーマ更新時にユーザーが何もする必要がない
+✅ **常に正しいスキーマ**: データベース構造の不整合を防止
+✅ **データ破損のリスクなし**: マイグレーション失敗によるデータ破損を回避
+✅ **自動バックアップ**: 古いデータベースは保持される（最新3つ）
+✅ **Windows対応**: ファイルロック問題を回避する設計
 
-#### 実際の移行実行
+### 注意点
 
-```bash
-bun run migrate:descriptions
-```
+⚠️ **データの再取得**: スキーマ更新時、キャッシュされた書誌データは失われます
+ℹ️ **自動再取得**: データは次回使用時にNDL APIから自動的に再取得されます
+✅ **カバー画像は保護**: カバー画像キャッシュは別ディレクトリなので影響を受けません
 
-または
+## バックアップファイル
 
-```bash
-bun scripts/migrate-descriptions.ts
-```
+### 場所
 
-#### オプション
-
-- `--dry-run`: 変更内容を表示するが、実際には更新しない
-- `--limit N`: 処理するレコード数を制限（テスト用）
-
-例：
-
-```bash
-# 最初の10件だけ処理（テスト用）
-bun scripts/migrate-descriptions.ts --dry-run --limit 10
-
-# 実際に移行
-bun scripts/migrate-descriptions.ts
-```
-
-### マイグレーションの動作
-
-1. `description` が NULL または空のレコードを検索
-2. 各レコードについてNDL APIからdescriptionを取得
-3. データベースを更新
-
-**注意事項:**
-
-- NDL APIへの負荷を考慮し、リクエスト間に100msの待機時間を設定
-- 大量のレコードがある場合、処理に時間がかかる可能性があります
-- ネットワークエラーが発生した場合、該当レコードはスキップされます
-
-### 進捗表示
-
-```
-📚 Bibliographic Description Migration Tool
-
-Found 15 record(s) with missing descriptions
-
-[1/15] 9784861827921: 麻薬と人間100年の物語
-  ✓ Updated (1234 chars)
-[2/15] 9784621051306: ゲームとしての交渉
-  ℹ No description available on NDL
-...
-
-📊 Summary:
-  Total records: 15
-  Updated: 12
-  No description available: 3
-  Failed: 0
-
-✓ Migration completed!
-```
-
-## トラブルシューティング
-
-### マイグレーションが失敗する
-
-マイグレーションが失敗した場合：
-
-1. エラーメッセージを確認
-2. データベースファイルのバックアップを取る
-3. 必要に応じて手動で修正
-
-### データベースをリセットする
-
-全てのキャッシュデータを削除して最初からやり直す場合：
+古いデータベースファイルは、アプリケーションデータディレクトリに保存されます：
 
 **Windows:**
-```bash
-del "%LOCALAPPDATA%\Calil-management-app\bibliographic.db"
+```
+C:\Users\[ユーザー名]\AppData\Local\Calil-management-app\
+  ├── bibliographic.db                              (現在のDB)
+  ├── bibliographic.db.2025-11-11T09-31-05-412Z.old (バックアップ1)
+  ├── bibliographic.db.2025-11-10T10-20-30-456Z.old (バックアップ2)
+  └── bibliographic.db.2025-11-09T08-15-45-123Z.old (バックアップ3)
 ```
 
 **macOS:**
-```bash
-rm ~/Library/Application\ Support/Calil-management-app/bibliographic.db
+```
+~/Library/Application Support/Calil-management-app/
 ```
 
 **Linux:**
+```
+~/.local/share/Calil-management-app/
+```
+
+### 自動クリーンアップ
+
+- 最新3つのバックアップファイルが自動的に保持されます
+- それ以前のバックアップは自動的に削除されます
+
+### 手動削除
+
+バックアップファイルが不要な場合、手動で削除できます：
+
+**Windows:**
+```powershell
+del "%LOCALAPPDATA%\Calil-management-app\*.old"
+```
+
+**macOS/Linux:**
 ```bash
-rm ~/.local/share/Calil-management-app/bibliographic.db
+rm ~/Library/Application\ Support/Calil-management-app/*.old
 ```
 
-アプリケーションを再起動すると、新しいデータベースが作成されます。
+## 開発者向け情報
 
-### マイグレーションステータスの確認
+### スキーマバージョン管理
 
-マイグレーションの状態を確認するには、データベースを直接クエリ：
+- スキーマバージョンは `src/features/bibliographic/db/migrations.ts` で定義
+- 新しいマイグレーションを追加すると、バージョンが自動的にインクリメント
+- アプリケーション起動時に自動チェック・適用
 
-```sql
-SELECT * FROM schema_migrations ORDER BY version;
-```
+### ファイル構成
 
-## 参考情報
-
-- マイグレーションシステム: `src/features/bibliographic/db/migrations.ts`
-- スキーマ定義: `src/features/bibliographic/db/schema.ts`
-- マイグレーションスクリプト: `scripts/migrate-descriptions.ts`
+- **マイグレーション定義**: `src/features/bibliographic/db/migrations.ts`
+- **スキーマ定義**: `src/features/bibliographic/db/schema.ts`
+- **自動リセットロジック**: `getDatabase()` 関数内
