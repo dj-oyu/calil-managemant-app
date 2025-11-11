@@ -39,6 +39,9 @@ export class TabNavigationIsland extends Island {
     /** All tab content elements */
     private tabContents: NodeListOf<HTMLElement>;
 
+    /** Download button element */
+    private downloadButton: HTMLAnchorElement | null = null;
+
     /** Metadata for each list type */
     private metadata: Map<string, ListMetadata> = new Map();
 
@@ -59,6 +62,7 @@ export class TabNavigationIsland extends Island {
 
         this.tabs = root.querySelectorAll<HTMLAnchorElement>('.tab-button');
         this.tabContents = document.querySelectorAll<HTMLElement>('.tab-content');
+        this.downloadButton = document.querySelector<HTMLAnchorElement>('.download-button');
 
         if (this.tabs.length === 0) {
             throw new Error('TabNavigationIsland requires .tab-button elements');
@@ -162,6 +166,12 @@ export class TabNavigationIsland extends Island {
                 tab.setAttribute('aria-selected', 'false');
             }
         });
+
+        // Update download button URL
+        if (this.downloadButton) {
+            this.downloadButton.href = `/api/download/bibliographic/${targetTab}`;
+            logger.debug('📥 Updated download button URL:', this.downloadButton.href);
+        }
 
         // Update tab contents and load if necessary
         this.tabContents.forEach((content) => {
